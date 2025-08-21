@@ -1,57 +1,47 @@
 <?php
 
 /**
- * KFZ Fac Pro - Authentifizierungssystem
- * Session-basierte Authentifizierung wie im Original
+ * KFZ Fac Pro - Authentifizierungs-System
  */
 
 session_start();
 
 class Auth
 {
-    private static $instance = null;
-    private $db;
-    private $sessionTimeout = 86400; // 24 Stunden
+    private static $db;
+    private static $sessionTimeout = 86400; // 24 Stunden
 
-    private function __construct()
+    /**
+     * Initialisierung
+     */
+    public static function init()
     {
-        require_once dirname(__FILE__) . '/database.php';
-        $this->db = Database::getInstance()->getConnection();
-        $this->initSessionConfig();
-    }
+        require_once dirname(__DIR__) . '/config/database.php';
+        self::$db = Database::getInstance()->getConnection();
 
-    public static function getInstance()
-    {
-        if (self::$instance === null) {
-            self::$instance = new self();
+        // Session-Timeout aus Einstellungen laden
+        try {
+            $stmt = self::$db->prepare("SELECT value FROM einstellungen WHERE key = 'session_timeout'");
+            $stmt->execute();
+            $result = $stmt->fetch();
+            if ($result) {
+                self::$sessionTimeout = intval($result['value']);
+            }
+        } catch (Exception $e) {
+            // Fallback auf Standard
         }
-        return self::$instance;
-    }
-
-    private function initSessionConfig()
-    {
-        // Session-Konfiguration
-        ini_set('session.cookie_httponly', 1);
-        ini_set('session.use_only_cookies', 1);
-        ini_set('session.cookie_samesite', 'Strict');
-
-        // Session-Timeout prüfen
-        if (
-            isset($_SESSION['last_activity']) &&
-            (time() - $_SESSION['last_activity'] > $this->sessionTimeout)
-        ) {
-            $this->logout();
-        }
-        $_SESSION['last_activity'] = time();
     }
 
     /**
-     * Login-Funktion
+     * Login
      */
-    public function login($username, $password)
+    public static function login($username, $password)
     {
+        self::init();
+
         try {
-            $stmt = $this->db->prepare("
+            // Benutzer suchen
+            $stmt = self::$db->prepare("
                 SELECT id, username, password_hash, role, is_active 
                 FROM users 
                 WHERE username = ? AND is_active = 1
@@ -59,52 +49,54 @@ class Auth
             $stmt->execute([$username]);
             $user = $stmt->fetch();
 
-            if ($user && password_verify($password, $user['password_hash'])) {
-                // Session-Daten setzen
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['username'] = $user['username'];
-                $_SESSION['role'] = $user['role'];
-                $_SESSION['logged_in'] = true;
-                $_SESSION['login_time'] = time();
-                $_SESSION['last_activity'] = time();
-
-                // Login-Zeit aktualisieren
-                $updateStmt = $this->db->prepare("
-                    UPDATE users 
-                    SET last_login_at = CURRENT_TIMESTAMP 
-                    WHERE id = ?
-                ");
-                $updateStmt->execute([$user['id']]);
-
-                return [
-                    'success' => true,
-                    'user' => [
-                        'id' => $user['id'],
-                        'username' => $user['username'],
-                        'role' => $user['role']
-                    ]
-                ];
+            if (!$user) {
+                return ['success' => false, 'error' => 'Benutzername oder Passwort falsch'];
             }
 
+            // Passwort prüfen
+            if (!password_verify($password, $user['password_hash'])) {
+                return ['success' => false, 'error' => 'Benutzername oder Passwort falsch'];
+            }
+
+            // Session setzen
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['role'] = $user['role'];
+            $_SESSION['logged_in'] = true;
+            $_SESSION['login_time'] = time();
+            $_SESSION['last_activity'] = time();
+
+            // Session-ID regenerieren für Sicherheit
+            session_regenerate_id(true);
+
+            // Last Login aktualisieren
+            $stmt = self::$db->prepare("
+                UPDATE users 
+                SET last_login_at = CURRENT_TIMESTAMP 
+                WHERE id = ?
+            ");
+            $stmt->execute([$user['id']]);
+
             return [
-                'success' => false,
-                'error' => 'Ungültige Anmeldedaten'
+                'success' => true,
+                'user' => [
+                    'id' => $user['id'],
+                    'username' => $user['username'],
+                    'role' => $user['role']
+                ]
             ];
         } catch (PDOException $e) {
             error_log("Login-Fehler: " . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => 'Anmeldefehler aufgetreten'
-            ];
+            return ['success' => false, 'error' => 'Datenbankfehler'];
         }
     }
 
     /**
-     * Logout-Funktion
+     * Logout
      */
-    public function logout()
+    public static function logout()
     {
-        $_SESSION = array();
+        $_SESSION = [];
 
         if (ini_get("session.use_cookies")) {
             $params = session_get_cookie_params();
@@ -126,17 +118,31 @@ class Auth
     /**
      * Prüft ob Benutzer eingeloggt ist
      */
-    public function isLoggedIn()
+    public static function check()
     {
-        return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
+        if (!isset($_SESSION['logged_in']) || !$_SESSION['logged_in']) {
+            return false;
+        }
+
+        // Session-Timeout prüfen
+        if (isset($_SESSION['last_activity'])) {
+            $inactive = time() - $_SESSION['last_activity'];
+            if ($inactive > self::$sessionTimeout) {
+                self::logout();
+                return false;
+            }
+        }
+
+        $_SESSION['last_activity'] = time();
+        return true;
     }
 
     /**
-     * Gibt aktuellen Benutzer zurück
+     * Aktuellen Benutzer abrufen
      */
-    public function getCurrentUser()
+    public static function getCurrentUser()
     {
-        if (!$this->isLoggedIn()) {
+        if (!self::check()) {
             return null;
         }
 
@@ -148,91 +154,183 @@ class Auth
     }
 
     /**
-     * Middleware: Erfordert Login
+     * Prüft Admin-Rechte
      */
-    public function requireLogin()
+    public static function isAdmin()
     {
-        if (!$this->isLoggedIn()) {
-            http_response_code(401);
-            header('Content-Type: application/json');
-            echo json_encode(['error' => 'Nicht autorisiert']);
-            exit;
-        }
-    }
-
-    /**
-     * Middleware: Erfordert Admin-Rolle
-     */
-    public function requireAdmin()
-    {
-        $this->requireLogin();
-
-        if ($_SESSION['role'] !== 'admin') {
-            http_response_code(403);
-            header('Content-Type: application/json');
-            echo json_encode(['error' => 'Keine Berechtigung']);
-            exit;
-        }
+        return self::check() && $_SESSION['role'] === 'admin';
     }
 
     /**
      * Passwort ändern
      */
-    public function changePassword($userId, $oldPassword, $newPassword)
+    public static function changePassword($userId, $oldPassword, $newPassword)
     {
+        self::init();
+
         try {
             // Altes Passwort prüfen
-            $stmt = $this->db->prepare("SELECT password_hash FROM users WHERE id = ?");
+            $stmt = self::$db->prepare("SELECT password_hash FROM users WHERE id = ?");
             $stmt->execute([$userId]);
             $user = $stmt->fetch();
 
             if (!$user || !password_verify($oldPassword, $user['password_hash'])) {
-                return ['success' => false, 'error' => 'Altes Passwort ist falsch'];
+                return ['success' => false, 'error' => 'Altes Passwort falsch'];
             }
 
             // Neues Passwort setzen
             $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
-            $updateStmt = $this->db->prepare("
+            $stmt = self::$db->prepare("
                 UPDATE users 
                 SET password_hash = ?, updated_at = CURRENT_TIMESTAMP 
                 WHERE id = ?
             ");
-            $updateStmt->execute([$newHash, $userId]);
+            $stmt->execute([$newHash, $userId]);
 
             return ['success' => true];
         } catch (PDOException $e) {
-            error_log("Passwort-Änderung fehlgeschlagen: " . $e->getMessage());
-            return ['success' => false, 'error' => 'Fehler beim Ändern des Passworts'];
+            error_log("Passwort ändern Fehler: " . $e->getMessage());
+            return ['success' => false, 'error' => 'Datenbankfehler'];
         }
     }
 
     /**
-     * Benutzer erstellen (Admin-Funktion)
+     * Benutzer erstellen (nur Admin)
      */
-    public function createUser($username, $password, $role = 'user')
+    public static function createUser($username, $password, $role = 'user')
     {
-        try {
-            $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+        self::init();
 
-            $stmt = $this->db->prepare("
-                INSERT INTO users (username, password_hash, role, created_at, is_active) 
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP, 1)
+        if (!self::isAdmin()) {
+            return ['success' => false, 'error' => 'Keine Berechtigung'];
+        }
+
+        try {
+            // Prüfen ob Username existiert
+            $stmt = self::$db->prepare("SELECT id FROM users WHERE username = ?");
+            $stmt->execute([$username]);
+            if ($stmt->fetch()) {
+                return ['success' => false, 'error' => 'Benutzername existiert bereits'];
+            }
+
+            // Benutzer erstellen
+            $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+            $stmt = self::$db->prepare("
+                INSERT INTO users (username, password_hash, role, created_at, updated_at, is_active) 
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)
             ");
             $stmt->execute([$username, $passwordHash, $role]);
 
             return [
                 'success' => true,
-                'user_id' => $this->db->lastInsertId()
+                'id' => self::$db->lastInsertId()
             ];
         } catch (PDOException $e) {
-            if (strpos($e->getMessage(), 'UNIQUE') !== false) {
-                return ['success' => false, 'error' => 'Benutzername bereits vergeben'];
-            }
-            error_log("Benutzer-Erstellung fehlgeschlagen: " . $e->getMessage());
-            return ['success' => false, 'error' => 'Fehler beim Erstellen des Benutzers'];
+            error_log("Benutzer erstellen Fehler: " . $e->getMessage());
+            return ['success' => false, 'error' => 'Datenbankfehler'];
+        }
+    }
+
+    /**
+     * Alle Benutzer abrufen (nur Admin)
+     */
+    public static function getAllUsers()
+    {
+        self::init();
+
+        if (!self::isAdmin()) {
+            return ['success' => false, 'error' => 'Keine Berechtigung'];
+        }
+
+        try {
+            $stmt = self::$db->query("
+                SELECT id, username, role, created_at, last_login_at, is_active 
+                FROM users 
+                ORDER BY username
+            ");
+            return ['success' => true, 'users' => $stmt->fetchAll()];
+        } catch (PDOException $e) {
+            error_log("Benutzer abrufen Fehler: " . $e->getMessage());
+            return ['success' => false, 'error' => 'Datenbankfehler'];
+        }
+    }
+
+    /**
+     * Benutzer löschen (nur Admin)
+     */
+    public static function deleteUser($userId)
+    {
+        self::init();
+
+        if (!self::isAdmin()) {
+            return ['success' => false, 'error' => 'Keine Berechtigung'];
+        }
+
+        // Admin kann sich nicht selbst löschen
+        if ($userId == $_SESSION['user_id']) {
+            return ['success' => false, 'error' => 'Sie können sich nicht selbst löschen'];
+        }
+
+        try {
+            $stmt = self::$db->prepare("DELETE FROM users WHERE id = ?");
+            $stmt->execute([$userId]);
+            return ['success' => true];
+        } catch (PDOException $e) {
+            error_log("Benutzer löschen Fehler: " . $e->getMessage());
+            return ['success' => false, 'error' => 'Datenbankfehler'];
+        }
+    }
+
+    /**
+     * Benutzer aktivieren/deaktivieren (nur Admin)
+     */
+    public static function setUserStatus($userId, $active)
+    {
+        self::init();
+
+        if (!self::isAdmin()) {
+            return ['success' => false, 'error' => 'Keine Berechtigung'];
+        }
+
+        try {
+            $stmt = self::$db->prepare("
+                UPDATE users 
+                SET is_active = ?, updated_at = CURRENT_TIMESTAMP 
+                WHERE id = ?
+            ");
+            $stmt->execute([$active ? 1 : 0, $userId]);
+            return ['success' => true];
+        } catch (PDOException $e) {
+            error_log("Benutzer Status Fehler: " . $e->getMessage());
+            return ['success' => false, 'error' => 'Datenbankfehler'];
+        }
+    }
+
+    /**
+     * Middleware für geschützte Routen
+     */
+    public static function requireAuth()
+    {
+        if (!self::check()) {
+            header('Content-Type: application/json');
+            http_response_code(401);
+            echo json_encode(['error' => 'Nicht authentifiziert']);
+            exit;
+        }
+    }
+
+    /**
+     * Middleware für Admin-Routen
+     */
+    public static function requireAdmin()
+    {
+        self::requireAuth();
+
+        if (!self::isAdmin()) {
+            header('Content-Type: application/json');
+            http_response_code(403);
+            echo json_encode(['error' => 'Keine Admin-Berechtigung']);
+            exit;
         }
     }
 }
-
-// Globale Auth-Instanz
-$auth = Auth::getInstance();

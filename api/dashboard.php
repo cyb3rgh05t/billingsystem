@@ -2,7 +2,7 @@
 
 /**
  * KFZ Fac Pro - Dashboard API
- * Statistiken und Übersicht
+ * Liefert alle Dashboard-Daten
  */
 
 // Headers
@@ -17,142 +17,197 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// Session prüfen
-session_start();
-if (!isset($_SESSION['logged_in']) || !$_SESSION['logged_in']) {
-    http_response_code(401);
-    echo json_encode(['error' => 'Nicht autorisiert']);
+// Nur GET erlauben
+if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+    http_response_code(405);
+    echo json_encode(['error' => 'Methode nicht erlaubt']);
     exit;
 }
 
-// Dashboard-Daten sammeln
-$dashboard = [
-    // Übersicht
-    'overview' => [
-        'date' => date('Y-m-d'),
-        'time' => date('H:i:s'),
-        'user' => $_SESSION['username'] ?? 'Admin',
-        'role' => $_SESSION['role'] ?? 'admin',
-        'version' => '2.0.0'
-    ],
+// Includes
+require_once dirname(__DIR__) . '/includes/auth.php';
+require_once dirname(__DIR__) . '/config/database.php';
+
+// Auth-Check
+Auth::requireAuth();
+
+// Datenbank-Verbindung
+$db = Database::getInstance()->getConnection();
+
+try {
+    $dashboard = [
+        'statistiken' => [],
+        'aktivitaeten' => [],
+        'diagramme' => [],
+        'schnellzugriff' => []
+    ];
+
+    // === STATISTIKEN ===
 
     // Kunden
-    'kunden' => [
-        'gesamt' => 156,
-        'neu_heute' => 2,
-        'neu_woche' => 8,
-        'neu_monat' => 23,
-        'aktiv' => 142,
-        'inaktiv' => 14
-    ],
+    $stmt = $db->query("SELECT COUNT(*) as gesamt, 
+                               COUNT(CASE WHEN gesperrt = 0 OR gesperrt IS NULL THEN 1 END) as aktiv
+                        FROM kunden");
+    $dashboard['statistiken']['kunden'] = $stmt->fetch();
 
     // Fahrzeuge
-    'fahrzeuge' => [
-        'gesamt' => 203,
-        'in_werkstatt' => 5,
-        'neu_monat' => 18
-    ],
+    $stmt = $db->query("SELECT COUNT(*) as gesamt FROM fahrzeuge");
+    $dashboard['statistiken']['fahrzeuge'] = $stmt->fetch();
 
     // Aufträge
-    'auftraege' => [
-        'gesamt' => 1245,
-        'offen' => 12,
-        'in_bearbeitung' => 8,
-        'abgeschlossen_heute' => 4,
-        'abgeschlossen_woche' => 28,
-        'abgeschlossen_monat' => 95,
-        'storniert' => 3
-    ],
+    $stmt = $db->query("SELECT COUNT(*) as gesamt,
+                               COUNT(CASE WHEN status = 'offen' THEN 1 END) as offen,
+                               COUNT(CASE WHEN status = 'in_bearbeitung' THEN 1 END) as in_bearbeitung,
+                               COUNT(CASE WHEN status = 'fertig' THEN 1 END) as fertig
+                        FROM auftraege");
+    $dashboard['statistiken']['auftraege'] = $stmt->fetch();
 
     // Rechnungen
-    'rechnungen' => [
-        'gesamt' => 1198,
-        'offen' => 15,
-        'teilbezahlt' => 3,
-        'bezahlt_heute' => 6,
-        'bezahlt_woche' => 31,
-        'bezahlt_monat' => 89,
-        'ueberfaellig' => 4,
-        'mahnung' => 2,
-        'storniert' => 5
-    ],
+    $stmt = $db->query("SELECT COUNT(*) as gesamt,
+                               COUNT(CASE WHEN bezahlt = 0 THEN 1 END) as offen,
+                               SUM(CASE WHEN bezahlt = 0 THEN gesamtbetrag ELSE 0 END) as offen_betrag,
+                               COUNT(CASE WHEN bezahlt = 0 AND faellig_am < DATE('now') THEN 1 END) as ueberfaellig
+                        FROM rechnungen 
+                        WHERE storniert = 0");
+    $dashboard['statistiken']['rechnungen'] = $stmt->fetch();
 
-    // Umsatz
-    'umsatz' => [
-        'heute' => 2456.80,
-        'gestern' => 3234.50,
-        'woche' => 15678.90,
-        'letzte_woche' => 14234.60,
-        'monat' => 45678.30,
-        'letzter_monat' => 42345.70,
-        'jahr' => 523456.80,
-        'letztes_jahr' => 498234.50,
-        'durchschnitt_tag' => 1856.40,
-        'durchschnitt_auftrag' => 285.60
-    ],
+    // Fahrzeughandel (falls Tabelle existiert)
+    try {
+        $stmt = $db->query("SELECT COUNT(*) as gesamt,
+                                   COUNT(CASE WHEN typ = 'ankauf' THEN 1 END) as ankaeufe,
+                                   COUNT(CASE WHEN typ = 'verkauf' THEN 1 END) as verkaeufe,
+                                   SUM(gewinn) as gesamt_gewinn
+                            FROM fahrzeug_handel 
+                            WHERE status != 'storniert'");
+        $dashboard['statistiken']['fahrzeughandel'] = $stmt->fetch();
+    } catch (Exception $e) {
+        // Tabelle existiert möglicherweise nicht
+        $dashboard['statistiken']['fahrzeughandel'] = [
+            'gesamt' => 0,
+            'ankaeufe' => 0,
+            'verkaeufe' => 0,
+            'gesamt_gewinn' => 0
+        ];
+    }
 
-    // Top-Listen
-    'top' => [
-        'kunden' => [
-            ['name' => 'Max Mustermann', 'umsatz' => 12456.80, 'auftraege' => 23],
-            ['name' => 'Anna Schmidt', 'umsatz' => 9234.50, 'auftraege' => 18],
-            ['name' => 'Peter Weber', 'umsatz' => 7890.30, 'auftraege' => 15],
-            ['name' => 'Maria Fischer', 'umsatz' => 6543.20, 'auftraege' => 12],
-            ['name' => 'Thomas Müller', 'umsatz' => 5678.90, 'auftraege' => 10]
-        ],
-        'leistungen' => [
-            ['name' => 'Ölwechsel', 'anzahl' => 145, 'umsatz' => 8700.00],
-            ['name' => 'Inspektion', 'anzahl' => 89, 'umsatz' => 13350.00],
-            ['name' => 'Bremsen', 'anzahl' => 67, 'umsatz' => 20100.00],
-            ['name' => 'Reifen', 'anzahl' => 234, 'umsatz' => 35100.00],
-            ['name' => 'TÜV/AU', 'anzahl' => 56, 'umsatz' => 5040.00]
-        ]
-    ],
+    // === LETZTE AKTIVITÄTEN ===
 
-    // Aktivitäten
-    'aktivitaeten' => [
-        ['zeit' => '09:15', 'typ' => 'auftrag', 'text' => 'Neuer Auftrag A2024-0145 erstellt'],
-        ['zeit' => '09:42', 'typ' => 'rechnung', 'text' => 'Rechnung R2024-0089 bezahlt'],
-        ['zeit' => '10:23', 'typ' => 'kunde', 'text' => 'Neuer Kunde: Hans Meyer'],
-        ['zeit' => '11:05', 'typ' => 'auftrag', 'text' => 'Auftrag A2024-0143 abgeschlossen'],
-        ['zeit' => '11:30', 'typ' => 'system', 'text' => 'Backup erfolgreich erstellt']
-    ],
+    // Letzte Aufträge
+    $stmt = $db->query("SELECT a.id, a.auftragsnummer, a.datum, a.status, a.beschreibung,
+                               k.vorname, k.nachname, k.firma
+                        FROM auftraege a
+                        LEFT JOIN kunden k ON a.kunden_id = k.id
+                        ORDER BY a.erstellt_am DESC
+                        LIMIT 5");
+    $dashboard['aktivitaeten']['auftraege'] = $stmt->fetchAll();
 
-    // Termine
-    'termine' => [
-        ['zeit' => '14:00', 'kunde' => 'Max Mustermann', 'fahrzeug' => 'B-XY 1234', 'leistung' => 'Inspektion'],
-        ['zeit' => '15:30', 'kunde' => 'Anna Schmidt', 'fahrzeug' => 'M-AB 5678', 'leistung' => 'Reifenwechsel'],
-        ['zeit' => '16:00', 'kunde' => 'Peter Weber', 'fahrzeug' => 'S-CD 9012', 'leistung' => 'TÜV/AU']
-    ],
+    // Letzte Rechnungen
+    $stmt = $db->query("SELECT r.id, r.rechnungsnummer, r.datum, r.gesamtbetrag, r.bezahlt,
+                               k.vorname, k.nachname, k.firma
+                        FROM rechnungen r
+                        LEFT JOIN kunden k ON r.kunden_id = k.id
+                        ORDER BY r.erstellt_am DESC
+                        LIMIT 5");
+    $dashboard['aktivitaeten']['rechnungen'] = $stmt->fetchAll();
 
-    // Warnungen
-    'warnungen' => [
-        'ueberfaellige_rechnungen' => 4,
-        'offene_auftraege_alt' => 2,
-        'backup_veraltet' => false,
-        'lizenz_ablauf' => false,
-        'lagerbestand_niedrig' => 3
-    ],
+    // Neue Kunden
+    $stmt = $db->query("SELECT id, vorname, nachname, firma, kunde_seit
+                        FROM kunden
+                        ORDER BY erstellt_am DESC
+                        LIMIT 5");
+    $dashboard['aktivitaeten']['neue_kunden'] = $stmt->fetchAll();
 
-    // Chart-Daten
-    'charts' => [
-        'umsatz_woche' => [
-            ['tag' => 'Mo', 'umsatz' => 2345.60],
-            ['tag' => 'Di', 'umsatz' => 3456.80],
-            ['tag' => 'Mi', 'umsatz' => 2890.40],
-            ['tag' => 'Do', 'umsatz' => 3234.50],
-            ['tag' => 'Fr', 'umsatz' => 2456.80],
-            ['tag' => 'Sa', 'umsatz' => 1294.80],
-            ['tag' => 'So', 'umsatz' => 0]
-        ],
-        'auftraege_status' => [
-            ['status' => 'Offen', 'anzahl' => 12, 'farbe' => '#ed8936'],
-            ['status' => 'In Bearbeitung', 'anzahl' => 8, 'farbe' => '#4299e1'],
-            ['status' => 'Abgeschlossen', 'anzahl' => 95, 'farbe' => '#48bb78'],
-            ['status' => 'Storniert', 'anzahl' => 3, 'farbe' => '#f56565']
-        ]
-    ]
-];
+    // === DIAGRAMM-DATEN ===
 
-// Response senden
-echo json_encode($dashboard);
+    // Umsatz letzte 12 Monate
+    $stmt = $db->query("SELECT 
+                            strftime('%Y-%m', datum) as monat,
+                            SUM(gesamtbetrag) as umsatz,
+                            COUNT(*) as anzahl
+                        FROM rechnungen
+                        WHERE datum >= date('now', '-12 months')
+                          AND storniert = 0
+                        GROUP BY strftime('%Y-%m', datum)
+                        ORDER BY monat");
+    $dashboard['diagramme']['umsatz_monate'] = $stmt->fetchAll();
+
+    // Aufträge nach Status
+    $stmt = $db->query("SELECT status, COUNT(*) as anzahl
+                        FROM auftraege
+                        WHERE status != 'storniert'
+                        GROUP BY status");
+    $dashboard['diagramme']['auftraege_status'] = $stmt->fetchAll();
+
+    // Top 5 Kunden nach Umsatz
+    $stmt = $db->query("SELECT 
+                            k.id, k.vorname, k.nachname, k.firma,
+                            SUM(r.gesamtbetrag) as umsatz,
+                            COUNT(r.id) as anzahl_rechnungen
+                        FROM kunden k
+                        JOIN rechnungen r ON k.id = r.kunden_id
+                        WHERE r.storniert = 0
+                        GROUP BY k.id
+                        ORDER BY umsatz DESC
+                        LIMIT 5");
+    $dashboard['diagramme']['top_kunden'] = $stmt->fetchAll();
+
+    // === SCHNELLZUGRIFF / TODOS ===
+
+    // Heute fällige Aufträge
+    $stmt = $db->query("SELECT COUNT(*) as anzahl
+                        FROM auftraege
+                        WHERE DATE(termin_start) = DATE('now')
+                           OR DATE(termin_ende) = DATE('now')");
+    $result = $stmt->fetch();
+    $dashboard['schnellzugriff']['heute_faellig'] = $result['anzahl'];
+
+    // Überfällige Rechnungen
+    $stmt = $db->query("SELECT COUNT(*) as anzahl, SUM(gesamtbetrag) as betrag
+                        FROM rechnungen
+                        WHERE bezahlt = 0 
+                          AND storniert = 0
+                          AND faellig_am < DATE('now')");
+    $result = $stmt->fetch();
+    $dashboard['schnellzugriff']['ueberfaellige_rechnungen'] = $result;
+
+    // TÜV/AU fällig (nächste 30 Tage)
+    $stmt = $db->query("SELECT COUNT(*) as anzahl
+                        FROM fahrzeuge
+                        WHERE tuev_bis <= DATE('now', '+30 days')
+                           OR au_bis <= DATE('now', '+30 days')");
+    $result = $stmt->fetch();
+    $dashboard['schnellzugriff']['tuev_au_faellig'] = $result['anzahl'];
+
+    // Warte auf Teile
+    $stmt = $db->query("SELECT COUNT(*) as anzahl
+                        FROM auftraege
+                        WHERE status = 'warte_auf_teile'");
+    $result = $stmt->fetch();
+    $dashboard['schnellzugriff']['warte_auf_teile'] = $result['anzahl'];
+
+    // === META-INFORMATIONEN ===
+
+    // Einstellungen für Dashboard
+    $stmt = $db->query("SELECT key, value FROM einstellungen");
+    $settings = [];
+    while ($row = $stmt->fetch()) {
+        $settings[] = [
+            'key' => $row['key'],
+            'value' => $row['value']
+        ];
+    }
+    $dashboard['einstellungen'] = $settings;
+
+    $dashboard['meta'] = [
+        'timestamp' => date('Y-m-d H:i:s'),
+        'user' => Auth::getCurrentUser(),
+        'version' => '2.0.0'
+    ];
+
+    // Erfolgreiche Antwort
+    echo json_encode($dashboard);
+} catch (Exception $e) {
+    error_log("Dashboard API Fehler: " . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['error' => 'Fehler beim Laden der Dashboard-Daten']);
+}

@@ -2,10 +2,10 @@
 
 /**
  * KFZ Fac Pro - Fahrzeuge API
- * RESTful API für Fahrzeugverwaltung
+ * REST-API für Fahrzeugverwaltung
  */
 
-// CORS und Headers
+// Headers
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
@@ -18,201 +18,163 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // Includes
-require_once '../config/auth.php';
-require_once '../models/Fahrzeug.php';
+require_once dirname(__DIR__) . '/includes/auth.php';
+require_once dirname(__DIR__) . '/models/Fahrzeug.php';
 
 // Auth-Check
-$auth->requireLogin();
-
-// Request-Methode und ID ermitteln
-$method = $_SERVER['REQUEST_METHOD'];
-$pathInfo = isset($_SERVER['PATH_INFO']) ? $_SERVER['PATH_INFO'] : '';
-$segments = explode('/', trim($pathInfo, '/'));
-$id = isset($segments[0]) ? $segments[0] : null;
+Auth::requireAuth();
 
 // Model initialisieren
 $fahrzeugModel = new Fahrzeug();
 
-// Response-Helper
-function sendResponse($data, $statusCode = 200)
-{
-    http_response_code($statusCode);
-    echo json_encode($data);
-    exit;
-}
+// Request-Methode und Pfad ermitteln
+$method = $_SERVER['REQUEST_METHOD'];
+$pathInfo = isset($_SERVER['PATH_INFO']) ? $_SERVER['PATH_INFO'] : '';
+$segments = array_filter(explode('/', $pathInfo));
+$id = isset($segments[1]) ? intval($segments[1]) : null;
+$action = isset($segments[2]) ? $segments[2] : null;
 
-// Request-Body parsen
-function getRequestData()
-{
-    $contentType = isset($_SERVER['CONTENT_TYPE']) ? $_SERVER['CONTENT_TYPE'] : '';
+// Input-Daten
+$input = json_decode(file_get_contents('php://input'), true);
 
-    if (strpos($contentType, 'application/json') !== false) {
-        $json = file_get_contents('php://input');
-        return json_decode($json, true);
-    }
-
-    return $_POST;
-}
-
-// Routing basierend auf Methode
-switch ($method) {
-    case 'GET':
-        if ($id) {
-            // Spezielle Endpunkte
-            if ($id === 'export') {
-                // Export-Funktion
-                $fahrzeuge = $fahrzeugModel->export();
-                sendResponse($fahrzeuge);
-            } elseif ($id === 'search') {
-                // Suche
-                $query = isset($_GET['q']) ? $_GET['q'] : '';
-                if (strlen($query) < 2) {
-                    sendResponse(['error' => 'Suchbegriff zu kurz'], 400);
-                }
-                $results = $fahrzeugModel->search($query);
-                sendResponse($results);
-            } elseif ($id === 'by-kunde') {
-                // Fahrzeuge eines Kunden
-                $kundenId = isset($_GET['kunden_id']) ? intval($_GET['kunden_id']) : 0;
-                if (!$kundenId) {
-                    sendResponse(['error' => 'Kunden-ID erforderlich'], 400);
-                }
-                $fahrzeuge = $fahrzeugModel->findByKunde($kundenId);
-                sendResponse($fahrzeuge);
-            } else {
+// Router
+try {
+    switch ($method) {
+        case 'GET':
+            if ($id) {
                 // Einzelnes Fahrzeug
-                $fahrzeug = $fahrzeugModel->findById($id);
-
-                if (!$fahrzeug) {
-                    sendResponse(['error' => 'Fahrzeug nicht gefunden'], 404);
-                }
-
-                // Mit Details laden wenn gewünscht
-                if (isset($_GET['include'])) {
-                    $includes = explode(',', $_GET['include']);
-
-                    if (in_array('kunde', $includes)) {
-                        $fahrzeug = $fahrzeugModel->findWithKunde($id);
-                    }
-
-                    if (in_array('historie', $includes)) {
-                        $fahrzeug['historie'] = $fahrzeugModel->getHistorie($id);
-                    }
-
-                    if (in_array('statistik', $includes)) {
-                        $fahrzeug['statistik'] = $fahrzeugModel->getStatistik($id);
-                    }
-                }
-
-                sendResponse($fahrzeug);
-            }
-        } else {
-            // Alle Fahrzeuge
-            $orderBy = isset($_GET['orderBy']) ? $_GET['orderBy'] : 'kennzeichen ASC';
-            $limit = isset($_GET['limit']) ? intval($_GET['limit']) : null;
-
-            // Mit Kundeninfos laden?
-            if (isset($_GET['withKunden']) && $_GET['withKunden'] === 'true') {
-                $fahrzeuge = $fahrzeugModel->findAllWithKunden($orderBy);
-            } else {
-                $fahrzeuge = $fahrzeugModel->findAll($orderBy, $limit);
-            }
-
-            sendResponse($fahrzeuge);
-        }
-        break;
-
-    case 'POST':
-        $data = getRequestData();
-
-        // Validierung
-        if (empty($data['kennzeichen'])) {
-            sendResponse(['error' => 'Kennzeichen ist erforderlich'], 400);
-        }
-
-        // Prüfen ob Kennzeichen bereits existiert
-        $existing = $fahrzeugModel->findByKennzeichen($data['kennzeichen']);
-        if ($existing) {
-            sendResponse(['error' => 'Fahrzeug mit diesem Kennzeichen existiert bereits'], 400);
-        }
-
-        // Fahrzeug erstellen
-        $result = $fahrzeugModel->create($data);
-
-        if ($result['success']) {
-            sendResponse($result['data'], 201);
-        } else {
-            sendResponse(['error' => $result['error']], 400);
-        }
-        break;
-
-    case 'PUT':
-        if (!$id) {
-            sendResponse(['error' => 'ID erforderlich'], 400);
-        }
-
-        $data = getRequestData();
-
-        // Spezielle Update-Funktionen
-        if (isset($segments[1])) {
-            if ($segments[1] === 'kilometerstand') {
-                // Kilometerstand aktualisieren
-                $kilometerstand = isset($data['kilometerstand']) ? intval($data['kilometerstand']) : 0;
-                $result = $fahrzeugModel->updateKilometerstand($id, $kilometerstand);
-
-                if ($result['success']) {
-                    sendResponse(['success' => true, 'message' => 'Kilometerstand aktualisiert']);
+                if ($action === 'service-history') {
+                    // GET /api/fahrzeuge/{id}/service-history
+                    $result = $fahrzeugModel->getWithServiceHistory($id);
+                } elseif ($action === 'kunde') {
+                    // GET /api/fahrzeuge/{id}/kunde
+                    $result = $fahrzeugModel->getWithKunde($id);
                 } else {
-                    sendResponse(['error' => $result['error']], 400);
+                    // GET /api/fahrzeuge/{id}
+                    $result = $fahrzeugModel->findById($id);
+                }
+
+                if ($result) {
+                    echo json_encode($result);
+                } else {
+                    http_response_code(404);
+                    echo json_encode(['error' => 'Fahrzeug nicht gefunden']);
+                }
+            } else {
+                // Spezielle Abfragen
+                if (isset($_GET['kennzeichen'])) {
+                    // GET /api/fahrzeuge?kennzeichen=XX-YY-123
+                    $result = $fahrzeugModel->findByKennzeichen($_GET['kennzeichen']);
+                    echo json_encode($result ?: ['error' => 'Fahrzeug nicht gefunden']);
+                } elseif (isset($_GET['kunde_id'])) {
+                    // GET /api/fahrzeuge?kunde_id=123
+                    $result = $fahrzeugModel->findByKundeId($_GET['kunde_id']);
+                    echo json_encode($result);
+                } elseif (isset($_GET['search'])) {
+                    // GET /api/fahrzeuge?search=...
+                    $result = $fahrzeugModel->search($_GET['search']);
+                    echo json_encode($result);
+                } elseif (isset($_GET['tuev_faellig'])) {
+                    // GET /api/fahrzeuge?tuev_faellig=30
+                    $tage = intval($_GET['tuev_faellig']);
+                    $result = $fahrzeugModel->getTuevAuFaellig($tage);
+                    echo json_encode($result);
+                } elseif (isset($_GET['service_faellig'])) {
+                    // GET /api/fahrzeuge?service_faellig=1
+                    $result = $fahrzeugModel->getServiceFaellig();
+                    echo json_encode($result);
+                } elseif (isset($_GET['statistiken'])) {
+                    // GET /api/fahrzeuge?statistiken=1
+                    $result = $fahrzeugModel->getStatistiken();
+                    echo json_encode($result);
+                } else {
+                    // GET /api/fahrzeuge
+                    $orderBy = isset($_GET['sort']) ? $_GET['sort'] : 'kennzeichen';
+                    $limit = isset($_GET['limit']) ? intval($_GET['limit']) : null;
+
+                    $result = $fahrzeugModel->findAll($orderBy, $limit);
+                    echo json_encode($result);
                 }
             }
-        }
+            break;
 
-        // Prüfen ob Fahrzeug existiert
-        if (!$fahrzeugModel->exists($id)) {
-            sendResponse(['error' => 'Fahrzeug nicht gefunden'], 404);
-        }
+        case 'POST':
+            // POST /api/fahrzeuge
+            if (!$input) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Keine Daten erhalten']);
+                break;
+            }
 
-        // Fahrzeug aktualisieren
-        $result = $fahrzeugModel->update($id, $data);
+            $result = $fahrzeugModel->create($input);
 
-        if ($result['success']) {
-            // Aktualisierte Daten zurückgeben
-            $fahrzeug = $fahrzeugModel->findById($id);
-            sendResponse($fahrzeug);
-        } else {
-            sendResponse(['error' => $result['error']], 400);
-        }
-        break;
+            if ($result['success']) {
+                http_response_code(201);
+                echo json_encode($result);
+            } else {
+                http_response_code(400);
+                echo json_encode($result);
+            }
+            break;
 
-    case 'DELETE':
-        if (!$id) {
-            sendResponse(['error' => 'ID erforderlich'], 400);
-        }
+        case 'PUT':
+            // PUT /api/fahrzeuge/{id}
+            if (!$id) {
+                http_response_code(400);
+                echo json_encode(['error' => 'ID fehlt']);
+                break;
+            }
 
-        // Prüfen ob Fahrzeug existiert
-        if (!$fahrzeugModel->exists($id)) {
-            sendResponse(['error' => 'Fahrzeug nicht gefunden'], 404);
-        }
+            if (!$input) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Keine Daten erhalten']);
+                break;
+            }
 
-        // Prüfen ob Fahrzeug in Aufträgen verwendet wird
-        $historie = $fahrzeugModel->getHistorie($id);
-        if (!empty($historie['auftraege']) || !empty($historie['rechnungen'])) {
-            sendResponse([
-                'error' => 'Fahrzeug kann nicht gelöscht werden - es existieren noch Aufträge oder Rechnungen'
-            ], 400);
-        }
+            // Spezielle Updates
+            if ($action === 'kilometerstand') {
+                // PUT /api/fahrzeuge/{id}/kilometerstand
+                $result = $fahrzeugModel->update($id, [
+                    'kilometerstand' => $input['kilometerstand']
+                ]);
+            } else {
+                // Standard Update
+                $result = $fahrzeugModel->update($id, $input);
+            }
 
-        // Fahrzeug löschen
-        $result = $fahrzeugModel->delete($id);
+            if ($result['success']) {
+                echo json_encode($result);
+            } else {
+                http_response_code(400);
+                echo json_encode($result);
+            }
+            break;
 
-        if ($result['success']) {
-            sendResponse(['success' => true, 'message' => 'Fahrzeug gelöscht']);
-        } else {
-            sendResponse(['error' => $result['error']], 400);
-        }
-        break;
+        case 'DELETE':
+            // DELETE /api/fahrzeuge/{id}
+            if (!$id) {
+                http_response_code(400);
+                echo json_encode(['error' => 'ID fehlt']);
+                break;
+            }
 
-    default:
-        sendResponse(['error' => 'Methode nicht erlaubt'], 405);
+            $result = $fahrzeugModel->delete($id);
+
+            if ($result['success']) {
+                echo json_encode($result);
+            } else {
+                http_response_code(400);
+                echo json_encode($result);
+            }
+            break;
+
+        default:
+            http_response_code(405);
+            echo json_encode(['error' => 'Methode nicht erlaubt']);
+            break;
+    }
+} catch (Exception $e) {
+    error_log("Fahrzeuge API Fehler: " . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['error' => 'Interner Serverfehler']);
 }

@@ -153,7 +153,8 @@ class Setup
         $this->db->exec("CREATE TABLE IF NOT EXISTS kunden (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             kunden_nr TEXT UNIQUE NOT NULL,
-            name TEXT NOT NULL,
+            vorname TEXT NOT NULL,
+            nachname TEXT NOT NULL,
             strasse TEXT,
             plz TEXT,
             ort TEXT,
@@ -229,6 +230,37 @@ class Setup
             FOREIGN KEY (fahrzeug_id) REFERENCES fahrzeuge(id) ON DELETE SET NULL,
             FOREIGN KEY (auftrag_id) REFERENCES auftraege(id) ON DELETE SET NULL
         )");
+
+        $this->db->exec("CREATE TABLE IF NOT EXISTS fahrzeug_handel (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    handel_nr TEXT UNIQUE NOT NULL,
+    typ TEXT NOT NULL CHECK (typ IN ('ankauf', 'verkauf')),
+    kunden_id INTEGER,
+    kaeufer_id INTEGER,
+    fahrzeug_id INTEGER,
+    datum DATE NOT NULL DEFAULT (date('now')),
+    status TEXT DEFAULT 'offen',
+    ankaufspreis DECIMAL(10,2),
+    verkaufspreis DECIMAL(10,2),
+    gewinn DECIMAL(10,2),
+    kennzeichen TEXT,
+    marke TEXT,
+    modell TEXT,
+    baujahr INTEGER,
+    kilometerstand INTEGER,
+    farbe TEXT,
+    vin TEXT,
+    zustand TEXT,
+    bemerkungen TEXT,
+    interne_notizen TEXT,
+    verkauft_an TEXT,
+    abgeschlossen_am DATETIME,
+    erstellt_am DATETIME DEFAULT CURRENT_TIMESTAMP,
+    aktualisiert_am DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (kunden_id) REFERENCES kunden(id),
+    FOREIGN KEY (kaeufer_id) REFERENCES kunden(id),
+    FOREIGN KEY (fahrzeug_id) REFERENCES fahrzeuge(id)
+)");
 
         // Einstellungen-Tabelle
         $this->db->exec("CREATE TABLE IF NOT EXISTS einstellungen (

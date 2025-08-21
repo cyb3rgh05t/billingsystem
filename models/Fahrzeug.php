@@ -9,234 +9,418 @@ require_once 'Model.php';
 class Fahrzeug extends Model
 {
     protected $table = 'fahrzeuge';
-    protected $primaryKey = 'id';
     protected $fillable = [
         'kunden_id',
         'kennzeichen',
         'marke',
         'modell',
-        'vin',
+        'typ',
         'baujahr',
+        'erstzulassung',
+        'vin',
+        'fin',
+        'motorcode',
+        'hubraum',
+        'leistung_kw',
+        'leistung_ps',
+        'kraftstoff',
+        'getriebe',
         'farbe',
-        'farbcode',
-        'kilometerstand'
+        'farbe_code',
+        'innenausstattung',
+        'kilometerstand',
+        'tuev_bis',
+        'au_bis',
+        'service_intervall_km',
+        'service_intervall_monate',
+        'letzter_service',
+        'naechster_service',
+        'versicherung',
+        'versicherungsnummer',
+        'schluessel_nummer',
+        'radio_code',
+        'bemerkungen',
+        'sonderausstattung',
+        'reifen_sommer',
+        'reifen_winter',
+        'reifen_zustand',
+        'bremsen_vorne_prozent',
+        'bremsen_hinten_prozent',
+        'batterie_datum',
+        'oelwechsel_bei_km',
+        'oelwechsel_datum',
+        'zahnriemen_bei_km',
+        'zahnriemen_datum'
     ];
 
     /**
-     * Fahrzeuge eines Kunden finden
+     * Konstruktor
      */
-    public function findByKunde($kundenId)
+    public function __construct()
     {
-        return $this->findWhere(['kunden_id' => $kundenId], 'kennzeichen ASC');
+        parent::__construct();
     }
 
     /**
-     * Fahrzeug mit Kunde laden
+     * Fahrzeuge nach Kennzeichen suchen
      */
-    public function findWithKunde($id)
+    public function findByKennzeichen($kennzeichen)
     {
-        $sql = "SELECT f.*, k.name as kunde_name, k.kunden_nr
-                FROM {$this->table} f
-                LEFT JOIN kunden k ON f.kunden_id = k.id
-                WHERE f.id = ?";
+        $sql = "SELECT * FROM {$this->table} WHERE kennzeichen = ?";
 
         try {
             $stmt = $this->db->prepare($sql);
-            $stmt->execute([$id]);
+            $stmt->execute([$kennzeichen]);
             return $stmt->fetch();
         } catch (PDOException $e) {
-            error_log("findWithKunde Fehler: " . $e->getMessage());
+            error_log("findByKennzeichen Fehler: " . $e->getMessage());
             return null;
         }
     }
 
     /**
-     * Alle Fahrzeuge mit Kundeninfos
+     * Fahrzeuge eines Kunden
      */
-    public function findAllWithKunden($orderBy = 'f.kennzeichen ASC')
+    public function findByKundeId($kundeId)
     {
-        $sql = "SELECT f.*, k.name as kunde_name, k.kunden_nr
-                FROM {$this->table} f
-                LEFT JOIN kunden k ON f.kunden_id = k.id
-                ORDER BY {$orderBy}";
+        $sql = "SELECT * FROM {$this->table} WHERE kunden_id = ? ORDER BY kennzeichen";
 
         try {
-            $stmt = $this->db->query($sql);
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([$kundeId]);
             return $stmt->fetchAll();
         } catch (PDOException $e) {
-            error_log("findAllWithKunden Fehler: " . $e->getMessage());
+            error_log("findByKundeId Fehler: " . $e->getMessage());
             return [];
         }
     }
 
     /**
-     * Fahrzeug nach Kennzeichen suchen
+     * Fahrzeug mit Kunde laden
      */
-    public function findByKennzeichen($kennzeichen)
+    public function getWithKunde($id)
     {
-        $results = $this->findWhere(['kennzeichen' => $kennzeichen]);
-        return !empty($results) ? $results[0] : null;
+        try {
+            $sql = "SELECT f.*, k.vorname, k.nachname, k.firma, k.telefon, k.mobil, k.email 
+                    FROM {$this->table} f
+                    LEFT JOIN kunden k ON f.kunden_id = k.id
+                    WHERE f.id = ?";
+
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([$id]);
+            return $stmt->fetch();
+        } catch (PDOException $e) {
+            error_log("getWithKunde Fehler: " . $e->getMessage());
+            return null;
+        }
     }
 
     /**
-     * Fahrzeug-Historie (Aufträge und Rechnungen)
+     * Fahrzeug mit Service-Historie
      */
-    public function getHistorie($fahrzeugId)
+    public function getWithServiceHistory($id)
     {
-        $historie = [
-            'auftraege' => [],
-            'rechnungen' => []
-        ];
-
         try {
-            // Aufträge laden
-            $sql = "SELECT a.*, k.name as kunde_name
+            // Fahrzeug laden
+            $fahrzeug = $this->findById($id);
+            if (!$fahrzeug) {
+                return null;
+            }
+
+            // Service-Historie aus Aufträgen laden
+            $sql = "SELECT a.id, a.datum, a.beschreibung, a.kilometerstand, 
+                           a.gesamtbetrag, a.status
                     FROM auftraege a
-                    LEFT JOIN kunden k ON a.kunden_id = k.id
                     WHERE a.fahrzeug_id = ?
                     ORDER BY a.datum DESC";
 
             $stmt = $this->db->prepare($sql);
-            $stmt->execute([$fahrzeugId]);
-            $historie['auftraege'] = $stmt->fetchAll();
+            $stmt->execute([$id]);
+            $fahrzeug['service_historie'] = $stmt->fetchAll();
 
-            // Rechnungen laden
-            $sql = "SELECT r.*, k.name as kunde_name
-                    FROM rechnungen r
-                    LEFT JOIN kunden k ON r.kunden_id = k.id
-                    WHERE r.fahrzeug_id = ?
-                    ORDER BY r.datum DESC";
-
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute([$fahrzeugId]);
-            $historie['rechnungen'] = $stmt->fetchAll();
+            return $fahrzeug;
         } catch (PDOException $e) {
-            error_log("getHistorie Fehler: " . $e->getMessage());
+            error_log("getWithServiceHistory Fehler: " . $e->getMessage());
+            return null;
         }
-
-        return $historie;
     }
 
     /**
-     * Suche nach Fahrzeugen
+     * Fahrzeuge suchen
      */
     public function search($query)
     {
-        $sql = "SELECT f.*, k.name as kunde_name
+        $sql = "SELECT f.*, k.vorname, k.nachname, k.firma 
                 FROM {$this->table} f
                 LEFT JOIN kunden k ON f.kunden_id = k.id
-                WHERE f.kennzeichen LIKE ?
-                   OR f.marke LIKE ?
-                   OR f.modell LIKE ?
+                WHERE f.kennzeichen LIKE ? 
+                   OR f.marke LIKE ? 
+                   OR f.modell LIKE ? 
                    OR f.vin LIKE ?
-                   OR k.name LIKE ?
+                   OR k.nachname LIKE ?
+                   OR k.firma LIKE ?
                 ORDER BY f.kennzeichen";
 
         $searchTerm = '%' . $query . '%';
 
         try {
             $stmt = $this->db->prepare($sql);
-            $stmt->execute([$searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm]);
+            $stmt->execute([
+                $searchTerm,
+                $searchTerm,
+                $searchTerm,
+                $searchTerm,
+                $searchTerm,
+                $searchTerm
+            ]);
             return $stmt->fetchAll();
         } catch (PDOException $e) {
-            error_log("search Fehler: " . $e->getMessage());
+            error_log("Fahrzeug-Suche Fehler: " . $e->getMessage());
             return [];
         }
     }
 
     /**
-     * Fahrzeug-Statistiken
+     * TÜV/AU fällige Fahrzeuge
      */
-    public function getStatistik($fahrzeugId)
+    public function getTuevAuFaellig($tage = 30)
     {
-        $stats = [
-            'anzahl_auftraege' => 0,
-            'anzahl_rechnungen' => 0,
-            'gesamt_kosten' => 0,
-            'letzter_service' => null
-        ];
+        $datum = date('Y-m-d', strtotime("+{$tage} days"));
 
-        try {
-            // Anzahl Aufträge
-            $stmt = $this->db->prepare("SELECT COUNT(*) as count FROM auftraege WHERE fahrzeug_id = ?");
-            $stmt->execute([$fahrzeugId]);
-            $result = $stmt->fetch();
-            $stats['anzahl_auftraege'] = $result['count'];
-
-            // Anzahl Rechnungen und Gesamtkosten
-            $stmt = $this->db->prepare("
-                SELECT COUNT(*) as count, SUM(gesamtbetrag) as total
-                FROM rechnungen 
-                WHERE fahrzeug_id = ? AND status = 'bezahlt'
-            ");
-            $stmt->execute([$fahrzeugId]);
-            $result = $stmt->fetch();
-            $stats['anzahl_rechnungen'] = $result['count'];
-            $stats['gesamt_kosten'] = $result['total'] ?: 0;
-
-            // Letzter Service
-            $stmt = $this->db->prepare("
-                SELECT datum 
-                FROM auftraege 
-                WHERE fahrzeug_id = ? 
-                ORDER BY datum DESC 
-                LIMIT 1
-            ");
-            $stmt->execute([$fahrzeugId]);
-            $result = $stmt->fetch();
-            if ($result) {
-                $stats['letzter_service'] = $result['datum'];
-            }
-        } catch (PDOException $e) {
-            error_log("getStatistik Fehler: " . $e->getMessage());
-        }
-
-        return $stats;
-    }
-
-    /**
-     * Kilometerstand aktualisieren
-     */
-    public function updateKilometerstand($fahrzeugId, $kilometerstand)
-    {
-        $sql = "UPDATE {$this->table} 
-                SET kilometerstand = ?, aktualisiert_am = CURRENT_TIMESTAMP 
-                WHERE id = ?";
+        $sql = "SELECT f.*, k.vorname, k.nachname, k.firma, k.telefon, k.email
+                FROM {$this->table} f
+                LEFT JOIN kunden k ON f.kunden_id = k.id
+                WHERE f.tuev_bis <= ? OR f.au_bis <= ?
+                ORDER BY f.tuev_bis, f.au_bis";
 
         try {
             $stmt = $this->db->prepare($sql);
-            $stmt->execute([$kilometerstand, $fahrzeugId]);
-            return ['success' => true];
+            $stmt->execute([$datum, $datum]);
+            return $stmt->fetchAll();
         } catch (PDOException $e) {
-            error_log("updateKilometerstand Fehler: " . $e->getMessage());
-            return ['success' => false, 'error' => 'Fehler beim Aktualisieren'];
+            error_log("getTuevAuFaellig Fehler: " . $e->getMessage());
+            return [];
         }
     }
 
     /**
-     * Export-Funktion
+     * Service fällige Fahrzeuge
      */
-    public function export()
+    public function getServiceFaellig()
     {
-        $sql = "SELECT 
-                    f.*,
-                    k.name as kunde_name,
-                    k.kunden_nr,
-                    COUNT(DISTINCT a.id) as anzahl_auftraege,
-                    COUNT(DISTINCT r.id) as anzahl_rechnungen,
-                    SUM(r.gesamtbetrag) as gesamt_umsatz
+        $sql = "SELECT f.*, k.vorname, k.nachname, k.firma, k.telefon, k.email
                 FROM {$this->table} f
                 LEFT JOIN kunden k ON f.kunden_id = k.id
-                LEFT JOIN auftraege a ON f.id = a.fahrzeug_id
-                LEFT JOIN rechnungen r ON f.id = r.fahrzeug_id AND r.status = 'bezahlt'
-                GROUP BY f.id
-                ORDER BY f.kennzeichen";
+                WHERE f.naechster_service <= CURRENT_DATE
+                   OR (f.service_intervall_km > 0 
+                       AND f.kilometerstand >= f.letzter_service + f.service_intervall_km)
+                ORDER BY f.naechster_service";
 
         try {
-            $stmt = $this->db->query($sql);
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute();
             return $stmt->fetchAll();
         } catch (PDOException $e) {
-            error_log("export Fehler: " . $e->getMessage());
+            error_log("getServiceFaellig Fehler: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Validierung
+     */
+    public function validate($data)
+    {
+        $errors = [];
+
+        // Pflichtfelder
+        if (empty($data['kennzeichen'])) {
+            $errors[] = 'Kennzeichen ist erforderlich';
+        }
+
+        // Kennzeichen Format (vereinfacht)
+        if (!empty($data['kennzeichen'])) {
+            $kennzeichen = strtoupper(str_replace(' ', '', $data['kennzeichen']));
+            if (!preg_match('/^[A-Z]{1,3}[A-Z]{1,2}[0-9]{1,4}[A-Z]{0,1}$/', $kennzeichen)) {
+                $errors[] = 'Ungültiges Kennzeichen-Format';
+            }
+        }
+
+        // Baujahr
+        if (!empty($data['baujahr'])) {
+            $baujahr = intval($data['baujahr']);
+            $currentYear = date('Y');
+            if ($baujahr < 1900 || $baujahr > $currentYear + 1) {
+                $errors[] = 'Ungültiges Baujahr';
+            }
+        }
+
+        // Kilometerstand
+        if (isset($data['kilometerstand']) && $data['kilometerstand'] < 0) {
+            $errors[] = 'Kilometerstand kann nicht negativ sein';
+        }
+
+        // VIN/FIN Länge
+        if (!empty($data['vin']) && strlen($data['vin']) != 17) {
+            $errors[] = 'VIN muss 17 Zeichen lang sein';
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Vor dem Erstellen
+     */
+    public function beforeCreate(&$data)
+    {
+        // Kennzeichen normalisieren
+        if (!empty($data['kennzeichen'])) {
+            $data['kennzeichen'] = strtoupper(str_replace(' ', '', $data['kennzeichen']));
+        }
+
+        // PS aus KW berechnen falls nicht angegeben
+        if (!empty($data['leistung_kw']) && empty($data['leistung_ps'])) {
+            $data['leistung_ps'] = round($data['leistung_kw'] * 1.36);
+        }
+
+        // KW aus PS berechnen falls nicht angegeben
+        if (!empty($data['leistung_ps']) && empty($data['leistung_kw'])) {
+            $data['leistung_kw'] = round($data['leistung_ps'] / 1.36);
+        }
+    }
+
+    /**
+     * Erstellen mit Validierung
+     */
+    public function create($data)
+    {
+        // Validierung
+        $errors = $this->validate($data);
+        if (!empty($errors)) {
+            return ['success' => false, 'errors' => $errors];
+        }
+
+        // Prüfen ob Kennzeichen bereits existiert
+        $existing = $this->findByKennzeichen($data['kennzeichen']);
+        if ($existing) {
+            return ['success' => false, 'error' => 'Kennzeichen existiert bereits'];
+        }
+
+        // Vor dem Erstellen
+        $this->beforeCreate($data);
+
+        // Parent create aufrufen
+        return parent::create($data);
+    }
+
+    /**
+     * Update mit Validierung
+     */
+    public function update($id, $data)
+    {
+        // Validierung
+        $errors = $this->validate($data);
+        if (!empty($errors)) {
+            return ['success' => false, 'errors' => $errors];
+        }
+
+        // Wenn Kennzeichen geändert wird, prüfen ob es bereits existiert
+        if (!empty($data['kennzeichen'])) {
+            $data['kennzeichen'] = strtoupper(str_replace(' ', '', $data['kennzeichen']));
+
+            $existing = $this->findByKennzeichen($data['kennzeichen']);
+            if ($existing && $existing['id'] != $id) {
+                return ['success' => false, 'error' => 'Kennzeichen existiert bereits'];
+            }
+        }
+
+        // PS/KW berechnen
+        if (!empty($data['leistung_kw']) && empty($data['leistung_ps'])) {
+            $data['leistung_ps'] = round($data['leistung_kw'] * 1.36);
+        }
+        if (!empty($data['leistung_ps']) && empty($data['leistung_kw'])) {
+            $data['leistung_kw'] = round($data['leistung_ps'] / 1.36);
+        }
+
+        // Parent update aufrufen
+        return parent::update($id, $data);
+    }
+
+    /**
+     * Fahrzeug kann gelöscht werden?
+     */
+    public function canDelete($id)
+    {
+        try {
+            // Prüfen ob noch Aufträge existieren
+            $sql = "SELECT COUNT(*) as count FROM auftraege WHERE fahrzeug_id = ?";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([$id]);
+            $result = $stmt->fetch();
+            if ($result['count'] > 0) {
+                return ['success' => false, 'error' => 'Fahrzeug hat noch Aufträge'];
+            }
+
+            return ['success' => true];
+        } catch (PDOException $e) {
+            error_log("canDelete Fehler: " . $e->getMessage());
+            return ['success' => false, 'error' => 'Datenbankfehler'];
+        }
+    }
+
+    /**
+     * Löschen mit Prüfung
+     */
+    public function delete($id)
+    {
+        $canDelete = $this->canDelete($id);
+        if (!$canDelete['success']) {
+            return $canDelete;
+        }
+
+        return parent::delete($id);
+    }
+
+    /**
+     * Statistiken
+     */
+    public function getStatistiken()
+    {
+        try {
+            $stats = [];
+
+            // Gesamt-Anzahl
+            $sql = "SELECT COUNT(*) as gesamt FROM {$this->table}";
+            $stmt = $this->db->query($sql);
+            $stats['gesamt'] = $stmt->fetch()['gesamt'];
+
+            // Nach Marke
+            $sql = "SELECT marke, COUNT(*) as anzahl 
+                    FROM {$this->table} 
+                    GROUP BY marke 
+                    ORDER BY anzahl DESC 
+                    LIMIT 10";
+            $stmt = $this->db->query($sql);
+            $stats['top_marken'] = $stmt->fetchAll();
+
+            // Nach Kraftstoff
+            $sql = "SELECT kraftstoff, COUNT(*) as anzahl 
+                    FROM {$this->table} 
+                    WHERE kraftstoff IS NOT NULL 
+                    GROUP BY kraftstoff";
+            $stmt = $this->db->query($sql);
+            $stats['kraftstoff'] = $stmt->fetchAll();
+
+            // Durchschnittliches Alter
+            $sql = "SELECT AVG(YEAR(CURRENT_DATE) - baujahr) as durchschnittsalter 
+                    FROM {$this->table} 
+                    WHERE baujahr IS NOT NULL";
+            $stmt = $this->db->query($sql);
+            $stats['durchschnittsalter'] = round($stmt->fetch()['durchschnittsalter'], 1);
+
+            return $stats;
+        } catch (PDOException $e) {
+            error_log("getStatistiken Fehler: " . $e->getMessage());
             return [];
         }
     }

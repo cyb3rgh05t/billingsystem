@@ -2,10 +2,10 @@
 
 /**
  * KFZ Fac Pro - Kunden API
- * RESTful API für Kundenverwaltung
+ * REST-API für Kundenverwaltung
  */
 
-// CORS und Headers
+// Headers
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
@@ -18,170 +18,149 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // Includes
-require_once '../config/auth.php';
-require_once '../models/Kunde.php';
+require_once dirname(__DIR__) . '/includes/auth.php';
+require_once dirname(__DIR__) . '/models/Kunde.php';
 
 // Auth-Check
-$auth->requireLogin();
-
-// Request-Methode und ID ermitteln
-$method = $_SERVER['REQUEST_METHOD'];
-$pathInfo = isset($_SERVER['PATH_INFO']) ? $_SERVER['PATH_INFO'] : '';
-$segments = explode('/', trim($pathInfo, '/'));
-$id = isset($segments[0]) ? $segments[0] : null;
+Auth::requireAuth();
 
 // Model initialisieren
 $kundeModel = new Kunde();
 
-// Response-Helper
-function sendResponse($data, $statusCode = 200)
-{
-    http_response_code($statusCode);
-    echo json_encode($data);
-    exit;
-}
+// Request-Methode und Pfad ermitteln
+$method = $_SERVER['REQUEST_METHOD'];
+$pathInfo = isset($_SERVER['PATH_INFO']) ? $_SERVER['PATH_INFO'] : '';
+$segments = array_filter(explode('/', $pathInfo));
+$id = isset($segments[1]) ? intval($segments[1]) : null;
+$action = isset($segments[2]) ? $segments[2] : null;
 
-// Request-Body parsen
-function getRequestData()
-{
-    $contentType = isset($_SERVER['CONTENT_TYPE']) ? $_SERVER['CONTENT_TYPE'] : '';
+// Input-Daten
+$input = json_decode(file_get_contents('php://input'), true);
 
-    if (strpos($contentType, 'application/json') !== false) {
-        $json = file_get_contents('php://input');
-        return json_decode($json, true);
+// Router
+try {
+    switch ($method) {
+        case 'GET':
+            if ($id) {
+                // Einzelner Kunde
+                if ($action === 'fahrzeuge') {
+                    // GET /api/kunden/{id}/fahrzeuge
+                    $result = $kundeModel->getWithFahrzeuge($id);
+                } elseif ($action === 'auftraege') {
+                    // GET /api/kunden/{id}/auftraege
+                    $result = $kundeModel->getWithAuftraege($id);
+                } elseif ($action === 'rechnungen') {
+                    // GET /api/kunden/{id}/rechnungen
+                    $result = $kundeModel->getWithRechnungen($id);
+                } elseif ($action === 'umsatz') {
+                    // GET /api/kunden/{id}/umsatz
+                    $result = $kundeModel->getUmsatzStatistik($id);
+                } else {
+                    // GET /api/kunden/{id}
+                    $result = $kundeModel->findById($id);
+                }
+
+                if ($result) {
+                    echo json_encode($result);
+                } else {
+                    http_response_code(404);
+                    echo json_encode(['error' => 'Kunde nicht gefunden']);
+                }
+            } else {
+                // Alle Kunden oder Suche
+                if (isset($_GET['search'])) {
+                    // GET /api/kunden?search=...
+                    $result = $kundeModel->search($_GET['search']);
+                } elseif (isset($_GET['export']) && $_GET['export'] === 'csv') {
+                    // GET /api/kunden?export=csv
+                    header('Content-Type: text/csv');
+                    header('Content-Disposition: attachment; filename="kunden_' . date('Y-m-d') . '.csv"');
+                    echo $kundeModel->exportCsv();
+                    exit;
+                } else {
+                    // GET /api/kunden
+                    $orderBy = isset($_GET['sort']) ? $_GET['sort'] : 'nachname, vorname';
+                    $limit = isset($_GET['limit']) ? intval($_GET['limit']) : null;
+
+                    $result = $kundeModel->findAll($orderBy, $limit);
+
+                    // Sicherstellen, dass es ein Array ist (auch wenn leer)
+                    if (!is_array($result)) {
+                        $result = [];
+                    }
+                }
+                echo json_encode($result);
+            }
+            break;
+
+        case 'POST':
+            // POST /api/kunden
+            if (!$input) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Keine Daten erhalten']);
+                break;
+            }
+
+            $result = $kundeModel->create($input);
+
+            if ($result['success']) {
+                http_response_code(201);
+                echo json_encode($result);
+            } else {
+                http_response_code(400);
+                echo json_encode($result);
+            }
+            break;
+
+        case 'PUT':
+            // PUT /api/kunden/{id}
+            if (!$id) {
+                http_response_code(400);
+                echo json_encode(['error' => 'ID fehlt']);
+                break;
+            }
+
+            if (!$input) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Keine Daten erhalten']);
+                break;
+            }
+
+            $result = $kundeModel->update($id, $input);
+
+            if ($result['success']) {
+                echo json_encode($result);
+            } else {
+                http_response_code(400);
+                echo json_encode($result);
+            }
+            break;
+
+        case 'DELETE':
+            // DELETE /api/kunden/{id}
+            if (!$id) {
+                http_response_code(400);
+                echo json_encode(['error' => 'ID fehlt']);
+                break;
+            }
+
+            $result = $kundeModel->delete($id);
+
+            if ($result['success']) {
+                echo json_encode($result);
+            } else {
+                http_response_code(400);
+                echo json_encode($result);
+            }
+            break;
+
+        default:
+            http_response_code(405);
+            echo json_encode(['error' => 'Methode nicht erlaubt']);
+            break;
     }
-
-    return $_POST;
-}
-
-// Routing basierend auf Methode
-switch ($method) {
-    case 'GET':
-        if ($id) {
-            // Einzelner Kunde
-            if ($id === 'export') {
-                // Export-Funktion
-                $kunden = $kundeModel->export();
-                sendResponse($kunden);
-            } elseif ($id === 'top') {
-                // Top-Kunden
-                $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 10;
-                $topKunden = $kundeModel->getTopKunden($limit);
-                sendResponse($topKunden);
-            } elseif ($id === 'search') {
-                // Suche
-                $query = isset($_GET['q']) ? $_GET['q'] : '';
-                if (strlen($query) < 2) {
-                    sendResponse(['error' => 'Suchbegriff zu kurz'], 400);
-                }
-                $results = $kundeModel->search($query);
-                sendResponse($results);
-            } elseif ($id === 'generate-nr') {
-                // Neue Kundennummer generieren
-                $kundenNr = $kundeModel->generateKundenNr();
-                sendResponse(['kunden_nr' => $kundenNr]);
-            } else {
-                // Kunde nach ID
-                $kunde = $kundeModel->findById($id);
-
-                if (!$kunde) {
-                    sendResponse(['error' => 'Kunde nicht gefunden'], 404);
-                }
-
-                // Mit Details laden wenn gewünscht
-                if (isset($_GET['include'])) {
-                    $includes = explode(',', $_GET['include']);
-
-                    if (in_array('fahrzeuge', $includes)) {
-                        $kunde = $kundeModel->findWithFahrzeuge($id);
-                    }
-
-                    if (in_array('stats', $includes)) {
-                        $kunde = $kundeModel->findWithStats($id);
-                    }
-                }
-
-                sendResponse($kunde);
-            }
-        } else {
-            // Alle Kunden
-            $orderBy = isset($_GET['orderBy']) ? $_GET['orderBy'] : 'name ASC';
-            $limit = isset($_GET['limit']) ? intval($_GET['limit']) : null;
-
-            // Filter anwenden
-            if (isset($_GET['filter'])) {
-                $filters = json_decode($_GET['filter'], true);
-                $kunden = $kundeModel->findWhere($filters, $orderBy, $limit);
-            } else {
-                $kunden = $kundeModel->findAll($orderBy, $limit);
-            }
-
-            sendResponse($kunden);
-        }
-        break;
-
-    case 'POST':
-        $data = getRequestData();
-
-        // Validierung
-        if (empty($data['name'])) {
-            sendResponse(['error' => 'Name ist erforderlich'], 400);
-        }
-
-        // Kunde erstellen
-        $result = $kundeModel->create($data);
-
-        if ($result['success']) {
-            sendResponse($result['data'], 201);
-        } else {
-            sendResponse(['error' => $result['error']], 400);
-        }
-        break;
-
-    case 'PUT':
-        if (!$id) {
-            sendResponse(['error' => 'ID erforderlich'], 400);
-        }
-
-        $data = getRequestData();
-
-        // Prüfen ob Kunde existiert
-        if (!$kundeModel->exists($id)) {
-            sendResponse(['error' => 'Kunde nicht gefunden'], 404);
-        }
-
-        // Kunde aktualisieren
-        $result = $kundeModel->update($id, $data);
-
-        if ($result['success']) {
-            // Aktualisierte Daten zurückgeben
-            $kunde = $kundeModel->findById($id);
-            sendResponse($kunde);
-        } else {
-            sendResponse(['error' => $result['error']], 400);
-        }
-        break;
-
-    case 'DELETE':
-        if (!$id) {
-            sendResponse(['error' => 'ID erforderlich'], 400);
-        }
-
-        // Prüfen ob Kunde existiert
-        if (!$kundeModel->exists($id)) {
-            sendResponse(['error' => 'Kunde nicht gefunden'], 404);
-        }
-
-        // Kunde löschen
-        $result = $kundeModel->delete($id);
-
-        if ($result['success']) {
-            sendResponse(['success' => true, 'message' => 'Kunde gelöscht']);
-        } else {
-            sendResponse(['error' => $result['error']], 400);
-        }
-        break;
-
-    default:
-        sendResponse(['error' => 'Methode nicht erlaubt'], 405);
+} catch (Exception $e) {
+    error_log("Kunden API Fehler: " . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['error' => 'Interner Serverfehler']);
 }

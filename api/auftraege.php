@@ -2,7 +2,7 @@
 
 /**
  * KFZ Fac Pro - Aufträge API
- * Vollständige CRUD-Operationen für Aufträge
+ * REST-API für Auftragsverwaltung
  */
 
 // Headers
@@ -17,241 +17,189 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// Session prüfen
-session_start();
-if (!isset($_SESSION['logged_in']) || !$_SESSION['logged_in']) {
-    http_response_code(401);
-    echo json_encode(['error' => 'Nicht autorisiert']);
-    exit;
-}
+// Includes
+require_once dirname(__DIR__) . '/includes/auth.php';
+require_once dirname(__DIR__) . '/models/Auftrag.php';
 
-// Models laden (falls vorhanden)
-$modelsPath = __DIR__ . '/../models/Auftrag.php';
-if (file_exists($modelsPath)) {
-    require_once $modelsPath;
-    $useModel = true;
-} else {
-    $useModel = false;
-}
+// Auth-Check
+Auth::requireAuth();
 
-// Request-Methode und Pfad
+// Model initialisieren
+$auftragModel = new Auftrag();
+
+// Request-Methode und Pfad ermitteln
 $method = $_SERVER['REQUEST_METHOD'];
 $pathInfo = isset($_SERVER['PATH_INFO']) ? $_SERVER['PATH_INFO'] : '';
-$segments = array_filter(explode('/', trim($pathInfo, '/')));
-$id = isset($segments[0]) ? $segments[0] : null;
-$action = isset($segments[1]) ? $segments[1] : null;
+$segments = array_filter(explode('/', $pathInfo));
+$id = isset($segments[1]) ? intval($segments[1]) : null;
+$action = isset($segments[2]) ? $segments[2] : null;
 
-// Request-Body parsen
-function getRequestData()
-{
-    $contentType = isset($_SERVER['CONTENT_TYPE']) ? $_SERVER['CONTENT_TYPE'] : '';
+// Input-Daten
+$input = json_decode(file_get_contents('php://input'), true);
 
-    if (strpos($contentType, 'application/json') !== false) {
-        $json = file_get_contents('php://input');
-        return json_decode($json, true);
-    }
-
-    return $_POST;
-}
-
-// Response senden
-function sendResponse($data, $statusCode = 200)
-{
-    http_response_code($statusCode);
-    echo json_encode($data);
-    exit;
-}
-
-// Dummy-Daten wenn kein Model vorhanden
-function getDummyAuftraege()
-{
-    return [
-        [
-            'id' => 1,
-            'auftrag_nr' => 'A2024-0001',
-            'kunden_id' => 1,
-            'kunde_name' => 'Max Mustermann',
-            'fahrzeug_id' => 1,
-            'kennzeichen' => 'B-XY 1234',
-            'marke' => 'BMW',
-            'modell' => '320d',
-            'datum' => '2024-01-15',
-            'status' => 'offen',
-            'basis_stundenpreis' => 110.00,
-            'gesamt_zeit' => 2.5,
-            'gesamt_kosten' => 275.00,
-            'mwst_betrag' => 52.25,
-            'bemerkungen' => 'Ölwechsel und Inspektion'
-        ],
-        [
-            'id' => 2,
-            'auftrag_nr' => 'A2024-0002',
-            'kunden_id' => 2,
-            'kunde_name' => 'Anna Schmidt',
-            'fahrzeug_id' => 2,
-            'kennzeichen' => 'M-AB 5678',
-            'marke' => 'Mercedes',
-            'modell' => 'C220',
-            'datum' => '2024-01-16',
-            'status' => 'in_bearbeitung',
-            'basis_stundenpreis' => 110.00,
-            'gesamt_zeit' => 1.0,
-            'gesamt_kosten' => 110.00,
-            'mwst_betrag' => 20.90,
-            'bemerkungen' => 'Bremsen prüfen'
-        ]
-    ];
-}
-
-// Routing
-switch ($method) {
-    case 'GET':
-        if ($id) {
-            // Spezielle Endpunkte
-            if ($id === 'export') {
-                // Export
-                sendResponse([
-                    'success' => true,
-                    'data' => getDummyAuftraege(),
-                    'format' => 'json',
-                    'timestamp' => date('Y-m-d H:i:s')
-                ]);
-            } elseif ($id === 'statistik') {
-                // Statistiken
-                sendResponse([
-                    'gesamt' => 45,
-                    'offen' => 12,
-                    'in_bearbeitung' => 5,
-                    'abgeschlossen' => 28,
-                    'umsatz_monat' => 12500.00,
-                    'durchschnitt' => 278.50
-                ]);
-            } elseif ($id === 'generate-nr') {
-                // Neue Auftragsnummer generieren
-                $year = date('Y');
-                $nr = 'A' . $year . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
-                sendResponse(['auftrag_nr' => $nr]);
-            } else {
+// Router
+try {
+    switch ($method) {
+        case 'GET':
+            if ($id) {
                 // Einzelner Auftrag
-                $auftraege = getDummyAuftraege();
-                foreach ($auftraege as $auftrag) {
-                    if ($auftrag['id'] == $id) {
-                        // Mit Positionen
-                        $auftrag['positionen'] = [
-                            [
-                                'id' => 1,
-                                'beschreibung' => 'Ölwechsel',
-                                'zeit' => 0.5,
-                                'stundenpreis' => 110,
-                                'gesamt' => 55.00
-                            ],
-                            [
-                                'id' => 2,
-                                'beschreibung' => 'Ölfilter',
-                                'zeit' => 0.25,
-                                'stundenpreis' => 110,
-                                'gesamt' => 27.50
-                            ]
-                        ];
-                        sendResponse($auftrag);
+                if ($action === 'details') {
+                    // GET /api/auftraege/{id}/details
+                    $result = $auftragModel->getWithDetails($id);
+                } else {
+                    // GET /api/auftraege/{id}
+                    $result = $auftragModel->findById($id);
+                }
+
+                if ($result) {
+                    // Positionen dekodieren falls nötig
+                    if (isset($result['positionen']) && is_string($result['positionen'])) {
+                        $result['positionen'] = json_decode($result['positionen'], true);
+                    }
+                    echo json_encode($result);
+                } else {
+                    http_response_code(404);
+                    echo json_encode(['error' => 'Auftrag nicht gefunden']);
+                }
+            } else {
+                // Spezielle Abfragen
+                if (isset($_GET['status'])) {
+                    // GET /api/auftraege?status=offen
+                    $result = $auftragModel->getByStatus($_GET['status']);
+                } elseif (isset($_GET['offen'])) {
+                    // GET /api/auftraege?offen=1
+                    $result = $auftragModel->getOffene();
+                } elseif (isset($_GET['heute'])) {
+                    // GET /api/auftraege?heute=1
+                    $result = $auftragModel->getHeuteFaellig();
+                } elseif (isset($_GET['ueberfaellig'])) {
+                    // GET /api/auftraege?ueberfaellig=1
+                    $result = $auftragModel->getUeberfaellig();
+                } elseif (isset($_GET['kunde_id'])) {
+                    // GET /api/auftraege?kunde_id=123
+                    $result = $auftragModel->getByKunde($_GET['kunde_id']);
+                } elseif (isset($_GET['fahrzeug_id'])) {
+                    // GET /api/auftraege?fahrzeug_id=123
+                    $result = $auftragModel->getByFahrzeug($_GET['fahrzeug_id']);
+                } elseif (isset($_GET['statistiken'])) {
+                    // GET /api/auftraege?statistiken=1&monat=12&jahr=2024
+                    $monat = isset($_GET['monat']) ? intval($_GET['monat']) : null;
+                    $jahr = isset($_GET['jahr']) ? intval($_GET['jahr']) : date('Y');
+                    $result = $auftragModel->getStatistiken($monat, $jahr);
+                } else {
+                    // GET /api/auftraege
+                    $orderBy = isset($_GET['sort']) ? $_GET['sort'] : 'datum DESC';
+                    $limit = isset($_GET['limit']) ? intval($_GET['limit']) : null;
+
+                    $result = $auftragModel->findAll($orderBy, $limit);
+                }
+
+                // Positionen dekodieren
+                foreach ($result as &$item) {
+                    if (isset($item['positionen']) && is_string($item['positionen'])) {
+                        $item['positionen'] = json_decode($item['positionen'], true);
                     }
                 }
-                sendResponse(['error' => 'Auftrag nicht gefunden'], 404);
+
+                echo json_encode($result);
             }
-        } else {
-            // Alle Aufträge
-            $auftraege = getDummyAuftraege();
+            break;
 
-            // Filter anwenden
-            if (isset($_GET['status'])) {
-                $auftraege = array_filter($auftraege, function ($a) {
-                    return $a['status'] === $_GET['status'];
-                });
+        case 'POST':
+            if ($id && $action) {
+                // Spezielle Aktionen
+                if ($action === 'status') {
+                    // POST /api/auftraege/{id}/status
+                    if (empty($input['status'])) {
+                        http_response_code(400);
+                        echo json_encode(['error' => 'Status fehlt']);
+                        break;
+                    }
+                    $result = $auftragModel->changeStatus($id, $input['status']);
+                } elseif ($action === 'rechnung') {
+                    // POST /api/auftraege/{id}/rechnung
+                    $result = $auftragModel->createRechnung($id);
+                } else {
+                    http_response_code(400);
+                    echo json_encode(['error' => 'Unbekannte Aktion']);
+                    break;
+                }
+
+                if ($result['success']) {
+                    echo json_encode($result);
+                } else {
+                    http_response_code(400);
+                    echo json_encode($result);
+                }
+            } else {
+                // POST /api/auftraege - Neuen Auftrag erstellen
+                if (!$input) {
+                    http_response_code(400);
+                    echo json_encode(['error' => 'Keine Daten erhalten']);
+                    break;
+                }
+
+                $result = $auftragModel->create($input);
+
+                if ($result['success']) {
+                    http_response_code(201);
+                    echo json_encode($result);
+                } else {
+                    http_response_code(400);
+                    echo json_encode($result);
+                }
+            }
+            break;
+
+        case 'PUT':
+            // PUT /api/auftraege/{id}
+            if (!$id) {
+                http_response_code(400);
+                echo json_encode(['error' => 'ID fehlt']);
+                break;
             }
 
-            if (isset($_GET['kunden_id'])) {
-                $auftraege = array_filter($auftraege, function ($a) {
-                    return $a['kunden_id'] == $_GET['kunden_id'];
-                });
+            if (!$input) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Keine Daten erhalten']);
+                break;
             }
 
-            sendResponse(array_values($auftraege));
-        }
-        break;
+            $result = $auftragModel->update($id, $input);
 
-    case 'POST':
-        $data = getRequestData();
+            if ($result['success']) {
+                echo json_encode($result);
+            } else {
+                http_response_code(400);
+                echo json_encode($result);
+            }
+            break;
 
-        // Validierung
-        if (empty($data['kunden_id'])) {
-            sendResponse(['error' => 'Kunde ist erforderlich'], 400);
-        }
+        case 'DELETE':
+            // DELETE /api/auftraege/{id}
+            if (!$id) {
+                http_response_code(400);
+                echo json_encode(['error' => 'ID fehlt']);
+                break;
+            }
 
-        // Spezielle Aktionen
-        if ($id && $action === 'create-invoice') {
-            // Rechnung aus Auftrag erstellen
-            sendResponse([
-                'success' => true,
-                'rechnung_id' => rand(100, 999),
-                'rechnung_nr' => 'R2024-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT),
-                'message' => 'Rechnung wurde erstellt'
-            ]);
-        }
+            $result = $auftragModel->delete($id);
 
-        // Neuen Auftrag erstellen
-        $newAuftrag = [
-            'id' => rand(100, 999),
-            'auftrag_nr' => 'A' . date('Y') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT),
-            'kunden_id' => $data['kunden_id'],
-            'fahrzeug_id' => $data['fahrzeug_id'] ?? null,
-            'datum' => $data['datum'] ?? date('Y-m-d'),
-            'status' => 'offen',
-            'basis_stundenpreis' => $data['basis_stundenpreis'] ?? 110,
-            'gesamt_zeit' => 0,
-            'gesamt_kosten' => 0,
-            'bemerkungen' => $data['bemerkungen'] ?? '',
-            'erstellt_am' => date('Y-m-d H:i:s')
-        ];
+            if ($result['success']) {
+                echo json_encode($result);
+            } else {
+                http_response_code(400);
+                echo json_encode($result);
+            }
+            break;
 
-        sendResponse($newAuftrag, 201);
-        break;
-
-    case 'PUT':
-        if (!$id) {
-            sendResponse(['error' => 'ID erforderlich'], 400);
-        }
-
-        $data = getRequestData();
-
-        // Status-Update
-        if ($action === 'status') {
-            sendResponse([
-                'success' => true,
-                'message' => 'Status aktualisiert',
-                'new_status' => $data['status']
-            ]);
-        }
-
-        // Auftrag aktualisieren
-        sendResponse([
-            'success' => true,
-            'message' => 'Auftrag aktualisiert',
-            'id' => $id
-        ]);
-        break;
-
-    case 'DELETE':
-        if (!$id) {
-            sendResponse(['error' => 'ID erforderlich'], 400);
-        }
-
-        sendResponse([
-            'success' => true,
-            'message' => 'Auftrag gelöscht',
-            'id' => $id
-        ]);
-        break;
-
-    default:
-        sendResponse(['error' => 'Methode nicht erlaubt'], 405);
+        default:
+            http_response_code(405);
+            echo json_encode(['error' => 'Methode nicht erlaubt']);
+            break;
+    }
+} catch (Exception $e) {
+    error_log("Aufträge API Fehler: " . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['error' => 'Interner Serverfehler']);
 }

@@ -1,7 +1,7 @@
 <?php
 
 /**
- * KFZ Fac Pro - Kunden Model
+ * KFZ Fac Pro - Kunde Model
  */
 
 require_once 'Model.php';
@@ -9,234 +9,406 @@ require_once 'Model.php';
 class Kunde extends Model
 {
     protected $table = 'kunden';
-    protected $primaryKey = 'id';
     protected $fillable = [
-        'kunden_nr',
-        'name',
+        'anrede',
+        'titel',
+        'vorname',
+        'nachname',
+        'firma',
         'strasse',
+        'hausnummer',
         'plz',
         'ort',
+        'land',
         'telefon',
-        'email'
+        'mobil',
+        'email',
+        'geburtsdatum',
+        'steuernummer',
+        'ustid',
+        'bemerkungen',
+        'rabatt',
+        'zahlungsziel',
+        'kreditlimit',
+        'gesperrt',
+        'sperr_grund',
+        'newsletter',
+        'dsgvo_einwilligung',
+        'dsgvo_datum',
+        'kunde_seit',
+        'bewertung',
+        'umsatz_gesamt',
+        'offene_posten',
+        'letzter_kontakt',
+        'bevorzugte_kontaktart',
+        'kundennummer'
     ];
 
     /**
-     * Generiert neue Kundennummer
+     * Konstruktor
      */
-    public function generateKundenNr()
+    public function __construct()
     {
-        $year = date('Y');
-        $prefix = 'K' . $year . '-';
-
-        // Höchste Nummer des Jahres finden
-        $sql = "SELECT kunden_nr FROM {$this->table} 
-                WHERE kunden_nr LIKE ? 
-                ORDER BY kunden_nr DESC 
-                LIMIT 1";
-
-        try {
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute([$prefix . '%']);
-            $result = $stmt->fetch();
-
-            if ($result) {
-                // Nummer extrahieren und erhöhen
-                $lastNr = str_replace($prefix, '', $result['kunden_nr']);
-                $newNr = intval($lastNr) + 1;
-            } else {
-                $newNr = 1;
-            }
-
-            return $prefix . str_pad($newNr, 4, '0', STR_PAD_LEFT);
-        } catch (PDOException $e) {
-            error_log("generateKundenNr Fehler: " . $e->getMessage());
-            return $prefix . '0001';
-        }
+        parent::__construct();
     }
 
     /**
-     * Kunde mit allen Fahrzeugen abrufen
+     * Vollständigen Namen generieren
      */
-    public function findWithFahrzeuge($id)
+    public function getFullName($kunde)
     {
-        $kunde = $this->findById($id);
+        $parts = [];
 
-        if (!$kunde) {
-            return null;
+        if (!empty($kunde['anrede'])) {
+            $parts[] = $kunde['anrede'];
+        }
+        if (!empty($kunde['titel'])) {
+            $parts[] = $kunde['titel'];
+        }
+        if (!empty($kunde['vorname'])) {
+            $parts[] = $kunde['vorname'];
+        }
+        if (!empty($kunde['nachname'])) {
+            $parts[] = $kunde['nachname'];
         }
 
-        // Fahrzeuge laden
-        $sql = "SELECT * FROM fahrzeuge WHERE kunden_id = ? ORDER BY kennzeichen";
-
-        try {
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute([$id]);
-            $kunde['fahrzeuge'] = $stmt->fetchAll();
-        } catch (PDOException $e) {
-            $kunde['fahrzeuge'] = [];
-        }
-
-        return $kunde;
+        return implode(' ', $parts);
     }
 
     /**
-     * Kunde mit Statistiken abrufen
-     */
-    public function findWithStats($id)
-    {
-        $kunde = $this->findById($id);
-
-        if (!$kunde) {
-            return null;
-        }
-
-        // Statistiken sammeln
-        try {
-            // Anzahl Fahrzeuge
-            $stmt = $this->db->prepare("SELECT COUNT(*) as count FROM fahrzeuge WHERE kunden_id = ?");
-            $stmt->execute([$id]);
-            $result = $stmt->fetch();
-            $kunde['stats']['fahrzeuge'] = $result['count'];
-
-            // Anzahl Aufträge
-            $stmt = $this->db->prepare("SELECT COUNT(*) as count FROM auftraege WHERE kunden_id = ?");
-            $stmt->execute([$id]);
-            $result = $stmt->fetch();
-            $kunde['stats']['auftraege'] = $result['count'];
-
-            // Anzahl Rechnungen
-            $stmt = $this->db->prepare("SELECT COUNT(*) as count FROM rechnungen WHERE kunden_id = ?");
-            $stmt->execute([$id]);
-            $result = $stmt->fetch();
-            $kunde['stats']['rechnungen'] = $result['count'];
-
-            // Gesamtumsatz
-            $stmt = $this->db->prepare("
-                SELECT SUM(gesamtbetrag) as total 
-                FROM rechnungen 
-                WHERE kunden_id = ? AND status = 'bezahlt'
-            ");
-            $stmt->execute([$id]);
-            $result = $stmt->fetch();
-            $kunde['stats']['umsatz'] = $result['total'] ?: 0;
-        } catch (PDOException $e) {
-            error_log("findWithStats Fehler: " . $e->getMessage());
-            $kunde['stats'] = [
-                'fahrzeuge' => 0,
-                'auftraege' => 0,
-                'rechnungen' => 0,
-                'umsatz' => 0
-            ];
-        }
-
-        return $kunde;
-    }
-
-    /**
-     * Suche nach Kunden
+     * Kunden suchen
      */
     public function search($query)
     {
         $sql = "SELECT * FROM {$this->table} 
-                WHERE name LIKE ? 
-                   OR kunden_nr LIKE ? 
+                WHERE vorname LIKE ? 
+                   OR nachname LIKE ? 
+                   OR firma LIKE ? 
                    OR email LIKE ? 
-                   OR telefon LIKE ?
-                ORDER BY name";
+                   OR telefon LIKE ? 
+                   OR mobil LIKE ?
+                   OR kundennummer LIKE ?
+                ORDER BY nachname, vorname";
 
         $searchTerm = '%' . $query . '%';
 
         try {
             $stmt = $this->db->prepare($sql);
-            $stmt->execute([$searchTerm, $searchTerm, $searchTerm, $searchTerm]);
+            $stmt->execute([
+                $searchTerm,
+                $searchTerm,
+                $searchTerm,
+                $searchTerm,
+                $searchTerm,
+                $searchTerm,
+                $searchTerm
+            ]);
             return $stmt->fetchAll();
         } catch (PDOException $e) {
-            error_log("search Fehler: " . $e->getMessage());
+            error_log("Kunden-Suche Fehler: " . $e->getMessage());
             return [];
         }
     }
 
     /**
-     * Überschriebene create-Methode mit Auto-Kundennummer
+     * Kunde mit Fahrzeugen laden
+     */
+    public function getWithFahrzeuge($id)
+    {
+        try {
+            // Kunde laden
+            $kunde = $this->findById($id);
+            if (!$kunde) {
+                return null;
+            }
+
+            // Fahrzeuge laden
+            $sql = "SELECT * FROM fahrzeuge WHERE kunden_id = ? ORDER BY kennzeichen";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([$id]);
+            $kunde['fahrzeuge'] = $stmt->fetchAll();
+
+            return $kunde;
+        } catch (PDOException $e) {
+            error_log("Kunde mit Fahrzeugen Fehler: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Kunde mit Aufträgen laden
+     */
+    public function getWithAuftraege($id)
+    {
+        try {
+            // Kunde laden
+            $kunde = $this->findById($id);
+            if (!$kunde) {
+                return null;
+            }
+
+            // Aufträge laden
+            $sql = "SELECT * FROM auftraege WHERE kunden_id = ? ORDER BY datum DESC";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([$id]);
+            $kunde['auftraege'] = $stmt->fetchAll();
+
+            return $kunde;
+        } catch (PDOException $e) {
+            error_log("Kunde mit Aufträgen Fehler: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Kunde mit Rechnungen laden
+     */
+    public function getWithRechnungen($id)
+    {
+        try {
+            // Kunde laden
+            $kunde = $this->findById($id);
+            if (!$kunde) {
+                return null;
+            }
+
+            // Rechnungen laden
+            $sql = "SELECT * FROM rechnungen WHERE kunden_id = ? ORDER BY datum DESC";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([$id]);
+            $kunde['rechnungen'] = $stmt->fetchAll();
+
+            return $kunde;
+        } catch (PDOException $e) {
+            error_log("Kunde mit Rechnungen Fehler: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Umsatz-Statistiken
+     */
+    public function getUmsatzStatistik($id)
+    {
+        try {
+            $sql = "SELECT 
+                        COUNT(*) as anzahl_rechnungen,
+                        SUM(gesamtbetrag) as umsatz_gesamt,
+                        AVG(gesamtbetrag) as umsatz_durchschnitt,
+                        MAX(gesamtbetrag) as hoechste_rechnung,
+                        MIN(gesamtbetrag) as niedrigste_rechnung,
+                        SUM(CASE WHEN bezahlt = 0 THEN gesamtbetrag ELSE 0 END) as offene_posten
+                    FROM rechnungen 
+                    WHERE kunden_id = ?";
+
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([$id]);
+            return $stmt->fetch();
+        } catch (PDOException $e) {
+            error_log("Umsatz-Statistik Fehler: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Vor dem Erstellen
+     */
+    public function beforeCreate(&$data)
+    {
+        // Kundennummer generieren wenn nicht vorhanden
+        if (empty($data['kundennummer'])) {
+            $data['kundennummer'] = $this->generateKundennummer();
+        }
+
+        // Kunde seit Datum setzen
+        if (empty($data['kunde_seit'])) {
+            $data['kunde_seit'] = date('Y-m-d');
+        }
+
+        // DSGVO-Datum setzen wenn Einwilligung
+        if (!empty($data['dsgvo_einwilligung']) && empty($data['dsgvo_datum'])) {
+            $data['dsgvo_datum'] = date('Y-m-d H:i:s');
+        }
+    }
+
+    /**
+     * Kundennummer generieren
+     */
+    private function generateKundennummer()
+    {
+        try {
+            // Präfix aus Einstellungen holen
+            $stmt = $this->db->prepare("SELECT value FROM einstellungen WHERE key = 'kunde_prefix'");
+            $stmt->execute();
+            $result = $stmt->fetch();
+            $prefix = $result ? $result['value'] : 'K';
+
+            // Höchste Nummer finden
+            $sql = "SELECT MAX(CAST(REPLACE(kundennummer, ?, '') AS INTEGER)) as max_nr 
+                    FROM {$this->table} 
+                    WHERE kundennummer LIKE ?";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([$prefix, $prefix . '%']);
+            $result = $stmt->fetch();
+
+            $nextNr = ($result && $result['max_nr']) ? $result['max_nr'] + 1 : 1;
+
+            return $prefix . str_pad($nextNr, 5, '0', STR_PAD_LEFT);
+        } catch (PDOException $e) {
+            error_log("Kundennummer generieren Fehler: " . $e->getMessage());
+            return 'K' . time(); // Fallback
+        }
+    }
+
+    /**
+     * Validierung
+     */
+    public function validate($data)
+    {
+        $errors = [];
+
+        // Pflichtfelder
+        if (empty($data['nachname']) && empty($data['firma'])) {
+            $errors[] = 'Nachname oder Firma muss angegeben werden';
+        }
+
+        // E-Mail Format
+        if (!empty($data['email']) && !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+            $errors[] = 'Ungültiges E-Mail Format';
+        }
+
+        // PLZ Format (5-stellig für Deutschland)
+        if (!empty($data['plz']) && !empty($data['land'])) {
+            if ($data['land'] === 'Deutschland' && !preg_match('/^\d{5}$/', $data['plz'])) {
+                $errors[] = 'PLZ muss 5-stellig sein';
+            }
+        }
+
+        // Rabatt zwischen 0 und 100
+        if (isset($data['rabatt'])) {
+            $rabatt = floatval($data['rabatt']);
+            if ($rabatt < 0 || $rabatt > 100) {
+                $errors[] = 'Rabatt muss zwischen 0 und 100 liegen';
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Erstellen mit Validierung
      */
     public function create($data)
     {
-        // Kundennummer generieren falls nicht vorhanden
-        if (empty($data['kunden_nr'])) {
-            $data['kunden_nr'] = $this->generateKundenNr();
+        // Validierung
+        $errors = $this->validate($data);
+        if (!empty($errors)) {
+            return ['success' => false, 'errors' => $errors];
         }
 
+        // Vor dem Erstellen
+        $this->beforeCreate($data);
+
+        // Parent create aufrufen
         return parent::create($data);
     }
 
     /**
-     * Kunde löschen mit Abhängigkeiten prüfen
+     * Update mit Validierung
+     */
+    public function update($id, $data)
+    {
+        // Validierung
+        $errors = $this->validate($data);
+        if (!empty($errors)) {
+            return ['success' => false, 'errors' => $errors];
+        }
+
+        // DSGVO-Datum aktualisieren wenn sich Einwilligung ändert
+        if (isset($data['dsgvo_einwilligung']) && $data['dsgvo_einwilligung']) {
+            $current = $this->findById($id);
+            if ($current && !$current['dsgvo_einwilligung']) {
+                $data['dsgvo_datum'] = date('Y-m-d H:i:s');
+            }
+        }
+
+        // Parent update aufrufen
+        return parent::update($id, $data);
+    }
+
+    /**
+     * Kunde kann gelöscht werden?
+     */
+    public function canDelete($id)
+    {
+        try {
+            // Prüfen ob noch Aufträge existieren
+            $sql = "SELECT COUNT(*) as count FROM auftraege WHERE kunden_id = ?";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([$id]);
+            $result = $stmt->fetch();
+            if ($result['count'] > 0) {
+                return ['success' => false, 'error' => 'Kunde hat noch Aufträge'];
+            }
+
+            // Prüfen ob noch Rechnungen existieren
+            $sql = "SELECT COUNT(*) as count FROM rechnungen WHERE kunden_id = ?";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([$id]);
+            $result = $stmt->fetch();
+            if ($result['count'] > 0) {
+                return ['success' => false, 'error' => 'Kunde hat noch Rechnungen'];
+            }
+
+            return ['success' => true];
+        } catch (PDOException $e) {
+            error_log("canDelete Fehler: " . $e->getMessage());
+            return ['success' => false, 'error' => 'Datenbankfehler'];
+        }
+    }
+
+    /**
+     * Löschen mit Prüfung
      */
     public function delete($id)
     {
-        // Prüfe ob Kunde Aufträge oder Rechnungen hat
-        $hasAuftraege = $this->count(['kunden_id' => $id]);
-
-        if ($hasAuftraege > 0) {
-            return [
-                'success' => false,
-                'error' => 'Kunde kann nicht gelöscht werden - es existieren noch Aufträge'
-            ];
+        $canDelete = $this->canDelete($id);
+        if (!$canDelete['success']) {
+            return $canDelete;
         }
 
-        // Fahrzeuge werden durch CASCADE automatisch gelöscht
         return parent::delete($id);
     }
 
     /**
-     * Top-Kunden nach Umsatz
+     * Export als CSV
      */
-    public function getTopKunden($limit = 10)
+    public function exportCsv()
     {
-        $sql = "SELECT 
-                    k.*,
-                    COUNT(DISTINCT r.id) as anzahl_rechnungen,
-                    SUM(r.gesamtbetrag) as gesamt_umsatz
-                FROM {$this->table} k
-                LEFT JOIN rechnungen r ON k.id = r.kunden_id AND r.status = 'bezahlt'
-                GROUP BY k.id
-                HAVING gesamt_umsatz > 0
-                ORDER BY gesamt_umsatz DESC
-                LIMIT ?";
+        $kunden = $this->findAll('nachname, vorname');
 
-        try {
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute([$limit]);
-            return $stmt->fetchAll();
-        } catch (PDOException $e) {
-            error_log("getTopKunden Fehler: " . $e->getMessage());
-            return [];
+        $csv = "Kundennummer;Anrede;Titel;Vorname;Nachname;Firma;Strasse;PLZ;Ort;Telefon;Mobil;E-Mail;Kunde seit\n";
+
+        foreach ($kunden as $kunde) {
+            $csv .= sprintf(
+                "%s;%s;%s;%s;%s;%s;%s %s;%s;%s;%s;%s;%s;%s\n",
+                $kunde['kundennummer'],
+                $kunde['anrede'],
+                $kunde['titel'],
+                $kunde['vorname'],
+                $kunde['nachname'],
+                $kunde['firma'],
+                $kunde['strasse'],
+                $kunde['hausnummer'],
+                $kunde['plz'],
+                $kunde['ort'],
+                $kunde['telefon'],
+                $kunde['mobil'],
+                $kunde['email'],
+                $kunde['kunde_seit']
+            );
         }
-    }
 
-    /**
-     * Exportiere Kunden als Array
-     */
-    public function export()
-    {
-        $sql = "SELECT 
-                    k.*,
-                    COUNT(DISTINCT f.id) as anzahl_fahrzeuge,
-                    COUNT(DISTINCT a.id) as anzahl_auftraege,
-                    COUNT(DISTINCT r.id) as anzahl_rechnungen
-                FROM {$this->table} k
-                LEFT JOIN fahrzeuge f ON k.id = f.kunden_id
-                LEFT JOIN auftraege a ON k.id = a.kunden_id
-                LEFT JOIN rechnungen r ON k.id = r.kunden_id
-                GROUP BY k.id
-                ORDER BY k.name";
-
-        try {
-            $stmt = $this->db->query($sql);
-            return $stmt->fetchAll();
-        } catch (PDOException $e) {
-            error_log("export Fehler: " . $e->getMessage());
-            return [];
-        }
+        return $csv;
     }
 }
