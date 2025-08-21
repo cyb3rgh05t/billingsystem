@@ -1,521 +1,783 @@
 <?php
+// ========================================
+// setup.php - Complete System Setup
+// ========================================
 
-/**
- * KFZ Fac Pro - Setup & Installation
- * Erstellt Datenbank und Basis-Konfiguration
- */
+echo "=====================================\n";
+echo "   KFZ Billing System Setup v1.0    \n";
+echo "=====================================\n\n";
 
-// Fehlerberichterstattung
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+// Create directory structure
+$directories = [
+    'config',
+    'database',
+    'includes',
+    'api',
+    'models',
+    'assets/css',
+    'assets/js/modules',
+    'assets/images',
+    'logs',
+    'templates',
+    'uploads',
+    'backup'
+];
 
-// Setup-Klasse
-class Setup
-{
-    private $db;
-    private $dbPath;
-    private $errors = [];
-    private $success = [];
-
-    public function __construct()
-    {
-        $this->dbPath = __DIR__ . '/data/kfz.db';
+echo "[1/6] Creating directory structure...\n";
+foreach ($directories as $dir) {
+    if (!file_exists($dir)) {
+        mkdir($dir, 0777, true);
+        echo "  ✓ Created: {$dir}\n";
+    } else {
+        echo "  • Exists: {$dir}\n";
     }
+}
 
-    /**
-     * Führt komplettes Setup aus
-     */
-    public function run()
-    {
-        echo $this->getHeader();
-
-        // POST-Request verarbeiten
-        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $this->processSetup();
-        }
-
-        // Status prüfen
-        $this->checkStatus();
-
-        // Formular anzeigen
-        echo $this->getForm();
-        echo $this->getFooter();
-    }
-
-    /**
-     * Prüft aktuellen Status
-     */
-    private function checkStatus()
-    {
-        // PHP-Version
-        if (version_compare(PHP_VERSION, '7.4.0', '<')) {
-            $this->errors[] = 'PHP 7.4 oder höher erforderlich (Aktuell: ' . PHP_VERSION . ')';
-        } else {
-            $this->success[] = 'PHP-Version OK (' . PHP_VERSION . ')';
-        }
-
-        // PDO SQLite
-        if (!extension_loaded('pdo_sqlite')) {
-            $this->errors[] = 'PDO SQLite-Erweiterung nicht installiert';
-        } else {
-            $this->success[] = 'PDO SQLite verfügbar';
-        }
-
-        // Schreibrechte
-        $dirs = ['data', 'backups', 'uploads', 'logs'];
-        foreach ($dirs as $dir) {
-            $path = __DIR__ . '/' . $dir;
-            if (!file_exists($path)) {
-                if (!@mkdir($path, 0755, true)) {
-                    $this->errors[] = "Konnte Verzeichnis '$dir' nicht erstellen";
-                } else {
-                    $this->success[] = "Verzeichnis '$dir' erstellt";
-                }
-            } elseif (!is_writable($path)) {
-                $this->errors[] = "Verzeichnis '$dir' nicht beschreibbar";
-            } else {
-                $this->success[] = "Verzeichnis '$dir' OK";
-            }
-        }
-
-        // Datenbank-Status
-        if (file_exists($this->dbPath)) {
-            $this->success[] = 'Datenbank existiert bereits';
+// ========================================
+// Create includes/logger.php
+// ========================================
+echo "\n[2/6] Creating Logger class...\n";
+$loggerContent = '<?php
+class Logger {
+    private static $logFile;
+    
+    public static function init() {
+        self::$logFile = __DIR__ . "/../logs/app.log";
+        if (!file_exists(dirname(self::$logFile))) {
+            mkdir(dirname(self::$logFile), 0777, true);
         }
     }
-
-    /**
-     * Setup durchführen
-     */
-    private function processSetup()
-    {
-        $action = $_POST['action'] ?? '';
-
-        if ($action === 'install') {
-            $this->installDatabase();
-            $this->createAdminUser();
-        } elseif ($action === 'reset') {
-            $this->resetDatabase();
+    
+    public static function log($level, $message, $context = []) {
+        if (!self::$logFile) {
+            self::init();
         }
+        
+        $timestamp = date("Y-m-d H:i:s");
+        $contextStr = !empty($context) ? " " . json_encode($context) : "";
+        $logMessage = "[{$timestamp}] [{$level}] {$message}{$contextStr}" . PHP_EOL;
+        
+        file_put_contents(self::$logFile, $logMessage, FILE_APPEND | LOCK_EX);
+        
+        // Also output to console
+        echo "  [{$level}] {$message}\n";
     }
+    
+    public static function info($message, $context = []) {
+        self::log("INFO", $message, $context);
+    }
+    
+    public static function warning($message, $context = []) {
+        self::log("WARNING", $message, $context);
+    }
+    
+    public static function error($message, $context = []) {
+        self::log("ERROR", $message, $context);
+    }
+    
+    public static function success($message, $context = []) {
+        self::log("SUCCESS", $message, $context);
+    }
+}
+';
+file_put_contents('includes/logger.php', $loggerContent);
+echo "  ✓ Logger class created\n";
 
-    /**
-     * Datenbank installieren
-     */
-    private function installDatabase()
-    {
+// ========================================
+// Create config/database.php
+// ========================================
+echo "\n[3/6] Creating Database class...\n";
+$databaseContent = '<?php
+require_once __DIR__ . "/../includes/logger.php";
+
+class Database {
+    private static $instance = null;
+    private $connection;
+    private $db_file;
+    
+    private function __construct() {
+        $this->db_file = __DIR__ . "/../database/kfz_billing.db";
+        
         try {
-            // Backup falls vorhanden
-            if (file_exists($this->dbPath)) {
-                $backupPath = __DIR__ . '/backups/backup_' . date('Y-m-d_H-i-s') . '.db';
-                copy($this->dbPath, $backupPath);
-                $this->success[] = 'Backup erstellt: ' . basename($backupPath);
-            }
-
-            // Neue Datenbank
-            $this->db = new PDO('sqlite:' . $this->dbPath);
-            $this->db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-            // Optimierungen
-            $this->db->exec("PRAGMA journal_mode=WAL");
-            $this->db->exec("PRAGMA foreign_keys=ON");
-
-            // Tabellen erstellen
-            $this->createTables();
-
-            // Standarddaten
-            $this->insertDefaultData();
-
-            $this->success[] = 'Datenbank erfolgreich installiert!';
-        } catch (Exception $e) {
-            $this->errors[] = 'Datenbankfehler: ' . $e->getMessage();
+            $this->connection = new PDO("sqlite:" . $this->db_file);
+            $this->connection->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $this->connection->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+            
+            // Enable foreign keys
+            $this->connection->exec("PRAGMA foreign_keys = ON");
+            
+            Logger::info("Database connection established");
+        } catch (PDOException $e) {
+            Logger::error("Database connection failed: " . $e->getMessage());
+            throw $e;
         }
     }
+    
+    public static function getInstance() {
+        if (self::$instance === null) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
+    
+    public function getConnection() {
+        return $this->connection;
+    }
+    
+    public function initializeDatabase() {
+        $sql = file_get_contents(__DIR__ . "/../database/init.sql");
+        try {
+            $this->connection->exec($sql);
+            Logger::info("Database initialized successfully");
+            return true;
+        } catch (PDOException $e) {
+            Logger::error("Database initialization failed: " . $e->getMessage());
+            return false;
+        }
+    }
+}
+';
+file_put_contents('config/database.php', $databaseContent);
+echo "  ✓ Database class created\n";
 
-    /**
-     * Tabellen erstellen
-     */
-    private function createTables()
-    {
-        // Users-Tabelle
-        $this->db->exec("CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username VARCHAR(50) UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            role VARCHAR(20) NOT NULL DEFAULT 'user',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            last_login_at DATETIME,
-            is_active BOOLEAN DEFAULT 1
-        )");
-
-        // Kunden-Tabelle
-        $this->db->exec("CREATE TABLE IF NOT EXISTS kunden (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            kunden_nr TEXT UNIQUE NOT NULL,
-            vorname TEXT NOT NULL,
-            nachname TEXT NOT NULL,
-            strasse TEXT,
-            plz TEXT,
-            ort TEXT,
-            telefon TEXT,
-            email TEXT,
-            erstellt_am DATETIME DEFAULT CURRENT_TIMESTAMP,
-            aktualisiert_am DATETIME DEFAULT CURRENT_TIMESTAMP
-        )");
-
-        // Fahrzeuge-Tabelle
-        $this->db->exec("CREATE TABLE IF NOT EXISTS fahrzeuge (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            kunden_id INTEGER,
-            kennzeichen TEXT NOT NULL,
-            marke TEXT,
-            modell TEXT,
-            vin TEXT,
-            baujahr INTEGER,
-            farbe TEXT,
-            farbcode TEXT,
-            kilometerstand INTEGER DEFAULT 0,
-            erstellt_am DATETIME DEFAULT CURRENT_TIMESTAMP,
-            aktualisiert_am DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (kunden_id) REFERENCES kunden(id) ON DELETE CASCADE
-        )");
-
-        // Aufträge-Tabelle
-        $this->db->exec("CREATE TABLE IF NOT EXISTS auftraege (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            auftrag_nr TEXT UNIQUE NOT NULL,
-            kunden_id INTEGER,
-            fahrzeug_id INTEGER,
-            datum DATE NOT NULL,
-            status TEXT DEFAULT 'offen',
-            basis_stundenpreis DECIMAL(10,2) DEFAULT 110.00,
-            gesamt_zeit DECIMAL(10,2) DEFAULT 0,
-            gesamt_kosten DECIMAL(10,2) DEFAULT 0,
-            arbeitszeiten_kosten DECIMAL(10,2) DEFAULT 0,
-            mwst_betrag DECIMAL(10,2) DEFAULT 0,
-            anfahrt_aktiv BOOLEAN DEFAULT 0,
-            express_aktiv BOOLEAN DEFAULT 0,
-            wochenend_aktiv BOOLEAN DEFAULT 0,
-            anfahrt_betrag DECIMAL(10,2) DEFAULT 0,
-            express_betrag DECIMAL(10,2) DEFAULT 0,
-            wochenend_betrag DECIMAL(10,2) DEFAULT 0,
-            bemerkungen TEXT,
-            erstellt_am DATETIME DEFAULT CURRENT_TIMESTAMP,
-            aktualisiert_am DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (kunden_id) REFERENCES kunden(id) ON DELETE SET NULL,
-            FOREIGN KEY (fahrzeug_id) REFERENCES fahrzeuge(id) ON DELETE SET NULL
-        )");
-
-        // Rechnungen-Tabelle
-        $this->db->exec("CREATE TABLE IF NOT EXISTS rechnungen (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            rechnung_nr TEXT UNIQUE NOT NULL,
-            kunden_id INTEGER,
-            fahrzeug_id INTEGER,
-            auftrag_id INTEGER,
-            datum DATE NOT NULL,
-            faellig_am DATE,
-            status TEXT DEFAULT 'offen',
-            zwischensumme DECIMAL(10,2) DEFAULT 0,
-            mwst_satz DECIMAL(5,2) DEFAULT 19,
-            mwst_betrag DECIMAL(10,2) DEFAULT 0,
-            gesamtbetrag DECIMAL(10,2) DEFAULT 0,
-            gezahlt_am DATE,
-            zahlungsart TEXT,
-            bemerkungen TEXT,
-            erstellt_am DATETIME DEFAULT CURRENT_TIMESTAMP,
-            aktualisiert_am DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (kunden_id) REFERENCES kunden(id) ON DELETE SET NULL,
-            FOREIGN KEY (fahrzeug_id) REFERENCES fahrzeuge(id) ON DELETE SET NULL,
-            FOREIGN KEY (auftrag_id) REFERENCES auftraege(id) ON DELETE SET NULL
-        )");
-
-        $this->db->exec("CREATE TABLE IF NOT EXISTS fahrzeug_handel (
+// ========================================
+// Create database/init.sql
+// ========================================
+echo "\n[4/6] Creating database schema...\n";
+$initSQL = '-- Users table
+CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    handel_nr TEXT UNIQUE NOT NULL,
-    typ TEXT NOT NULL CHECK (typ IN ('ankauf', 'verkauf')),
-    kunden_id INTEGER,
-    kaeufer_id INTEGER,
-    fahrzeug_id INTEGER,
-    datum DATE NOT NULL DEFAULT (date('now')),
-    status TEXT DEFAULT 'offen',
-    ankaufspreis DECIMAL(10,2),
-    verkaufspreis DECIMAL(10,2),
-    gewinn DECIMAL(10,2),
-    kennzeichen TEXT,
-    marke TEXT,
-    modell TEXT,
-    baujahr INTEGER,
-    kilometerstand INTEGER,
-    farbe TEXT,
-    vin TEXT,
-    zustand TEXT,
-    bemerkungen TEXT,
-    interne_notizen TEXT,
-    verkauft_an TEXT,
-    abgeschlossen_am DATETIME,
-    erstellt_am DATETIME DEFAULT CURRENT_TIMESTAMP,
-    aktualisiert_am DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (kunden_id) REFERENCES kunden(id),
-    FOREIGN KEY (kaeufer_id) REFERENCES kunden(id),
-    FOREIGN KEY (fahrzeug_id) REFERENCES fahrzeuge(id)
-)");
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    first_name VARCHAR(50),
+    last_name VARCHAR(50),
+    role VARCHAR(20) DEFAULT "user",
+    active INTEGER DEFAULT 1,
+    last_login DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 
-        // Einstellungen-Tabelle
-        $this->db->exec("CREATE TABLE IF NOT EXISTS einstellungen (
-            key TEXT PRIMARY KEY,
-            value TEXT,
-            beschreibung TEXT,
-            aktualisiert_am DATETIME DEFAULT CURRENT_TIMESTAMP
-        )");
+-- Customers table
+CREATE TABLE IF NOT EXISTS customers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_name VARCHAR(100),
+    first_name VARCHAR(50) NOT NULL,
+    last_name VARCHAR(50) NOT NULL,
+    email VARCHAR(100),
+    phone VARCHAR(20),
+    street VARCHAR(100),
+    house_number VARCHAR(10),
+    postal_code VARCHAR(10),
+    city VARCHAR(50),
+    country VARCHAR(50) DEFAULT "Deutschland",
+    tax_id VARCHAR(50),
+    notes TEXT,
+    created_by INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (created_by) REFERENCES users(id)
+);
 
-        $this->success[] = 'Alle Tabellen erstellt';
+-- Vehicles table
+CREATE TABLE IF NOT EXISTS vehicles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL,
+    license_plate VARCHAR(20) NOT NULL,
+    manufacturer VARCHAR(50),
+    model VARCHAR(50),
+    year INTEGER,
+    vin VARCHAR(17),
+    engine_code VARCHAR(20),
+    color VARCHAR(30),
+    mileage INTEGER,
+    fuel_type VARCHAR(20),
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+);
+
+-- Orders table
+CREATE TABLE IF NOT EXISTS orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_number VARCHAR(20) UNIQUE NOT NULL,
+    customer_id INTEGER NOT NULL,
+    vehicle_id INTEGER,
+    status VARCHAR(20) DEFAULT "pending",
+    description TEXT,
+    total_amount DECIMAL(10,2),
+    tax_rate DECIMAL(5,2) DEFAULT 19.00,
+    discount DECIMAL(10,2) DEFAULT 0,
+    notes TEXT,
+    created_by INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(id),
+    FOREIGN KEY (vehicle_id) REFERENCES vehicles(id),
+    FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+-- Order items table
+CREATE TABLE IF NOT EXISTS order_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL,
+    item_type VARCHAR(20),
+    description TEXT NOT NULL,
+    quantity DECIMAL(10,2) DEFAULT 1,
+    unit_price DECIMAL(10,2),
+    total_price DECIMAL(10,2),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+);
+
+-- Invoices table
+CREATE TABLE IF NOT EXISTS invoices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_number VARCHAR(20) UNIQUE NOT NULL,
+    order_id INTEGER,
+    customer_id INTEGER NOT NULL,
+    status VARCHAR(20) DEFAULT "unpaid",
+    due_date DATE,
+    paid_date DATE,
+    total_amount DECIMAL(10,2),
+    tax_amount DECIMAL(10,2),
+    payment_method VARCHAR(30),
+    notes TEXT,
+    created_by INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (customer_id) REFERENCES customers(id),
+    FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+-- Settings table
+CREATE TABLE IF NOT EXISTS settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    setting_key VARCHAR(50) UNIQUE NOT NULL,
+    setting_value TEXT,
+    setting_type VARCHAR(20),
+    description TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Activity log table
+CREATE TABLE IF NOT EXISTS activity_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    action VARCHAR(50),
+    entity_type VARCHAR(30),
+    entity_id INTEGER,
+    description TEXT,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- Vehicle trade table (An- und Verkauf)
+CREATE TABLE IF NOT EXISTS vehicle_trades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trade_type VARCHAR(10) NOT NULL, -- "purchase" or "sale"
+    vehicle_id INTEGER,
+    price DECIMAL(10,2),
+    trade_date DATE,
+    partner_name VARCHAR(100),
+    partner_contact VARCHAR(100),
+    documents TEXT,
+    notes TEXT,
+    status VARCHAR(20) DEFAULT "pending",
+    created_by INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (vehicle_id) REFERENCES vehicles(id),
+    FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+-- Create indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);
+CREATE INDEX IF NOT EXISTS idx_vehicles_license ON vehicles(license_plate);
+CREATE INDEX IF NOT EXISTS idx_orders_number ON orders(order_number);
+CREATE INDEX IF NOT EXISTS idx_invoices_number ON invoices(invoice_number);
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+';
+file_put_contents('database/init.sql', $initSQL);
+echo "  ✓ Database schema created\n";
+
+// ========================================
+// Initialize Database
+// ========================================
+echo "\n[5/6] Initializing database...\n";
+require_once 'includes/logger.php';
+require_once 'config/database.php';
+
+try {
+    $db = Database::getInstance();
+    $conn = $db->getConnection();
+
+    // Execute the init SQL
+    $conn->exec($initSQL);
+    echo "  ✓ Database tables created\n";
+
+    // Create admin user
+    $adminPassword = password_hash('admin123', PASSWORD_DEFAULT);
+
+    $stmt = $conn->prepare("INSERT OR IGNORE INTO users (username, password, email, first_name, last_name, role) 
+                            VALUES (?, ?, ?, ?, ?, ?)");
+    $stmt->execute(['admin', $adminPassword, 'admin@kfz-billing.de', 'Admin', 'User', 'admin']);
+    echo "  ✓ Admin user created (Username: admin, Password: admin123)\n";
+
+    // Insert default settings
+    $settings = [
+        ['company_name', 'KFZ Werkstatt GmbH', 'string', 'Firmenname'],
+        ['company_address', 'Musterstraße 1, 12345 Musterstadt', 'string', 'Firmenadresse'],
+        ['company_phone', '+49 123 456789', 'string', 'Telefonnummer'],
+        ['company_email', 'info@kfz-werkstatt.de', 'string', 'E-Mail Adresse'],
+        ['tax_rate', '19', 'number', 'Standard Steuersatz'],
+        ['invoice_prefix', 'RE-', 'string', 'Rechnungsnummer Präfix'],
+        ['order_prefix', 'AU-', 'string', 'Auftragsnummer Präfix'],
+        ['currency', 'EUR', 'string', 'Währung'],
+        ['timezone', 'Europe/Berlin', 'string', 'Zeitzone']
+    ];
+
+    $stmt = $conn->prepare("INSERT OR IGNORE INTO settings (setting_key, setting_value, setting_type, description) 
+                           VALUES (?, ?, ?, ?)");
+
+    foreach ($settings as $setting) {
+        $stmt->execute($setting);
     }
+    echo "  ✓ Default settings inserted\n";
 
-    /**
-     * Standarddaten einfügen
-     */
-    private function insertDefaultData()
-    {
-        // Einstellungen
-        $settings = [
-            ['mwst_satz', '19', 'Standard MwSt-Satz'],
-            ['basis_stundenpreis', '110', 'Standard Stundenpreis'],
-            ['anfahrt_kosten', '25', 'Standard Anfahrtskosten'],
-            ['express_aufschlag', '50', 'Express-Aufschlag in %'],
-            ['wochenend_aufschlag', '75', 'Wochenend-Aufschlag in %'],
-            ['firmen_name', 'KFZ Werkstatt GmbH', 'Firmenname'],
-            ['firmen_strasse', 'Musterstraße 1', 'Firmenadresse'],
-            ['firmen_plz', '12345', 'Firmen-PLZ'],
-            ['firmen_ort', 'Musterstadt', 'Firmen-Ort'],
-            ['firmen_telefon', '0123/456789', 'Firmen-Telefon'],
-            ['firmen_email', 'info@kfz-werkstatt.de', 'Firmen-E-Mail'],
-            ['firmen_website', 'www.kfz-werkstatt.de', 'Firmen-Website'],
-            ['bank_name', 'Musterbank', 'Bankname'],
-            ['bank_iban', 'DE12 3456 7890 1234 5678 90', 'IBAN'],
-            ['bank_bic', 'DEUTDEFF', 'BIC'],
-            ['steuernummer', '123/456/78901', 'Steuernummer'],
-            ['ustid', 'DE123456789', 'USt-ID']
-        ];
+    // Add some demo data
+    echo "\n  Adding demo data...\n";
 
-        $stmt = $this->db->prepare("INSERT OR IGNORE INTO einstellungen (key, value, beschreibung) VALUES (?, ?, ?)");
-        foreach ($settings as $setting) {
-            $stmt->execute($setting);
-        }
+    // Demo customers
+    $customers = [
+        ['Müller GmbH', 'Thomas', 'Müller', 'thomas.mueller@mueller-gmbh.de', '+49 123 456789', 'Hauptstraße', '42', '12345', 'Berlin', 'Deutschland', 'DE123456789', 'Stammkunde seit 2020'],
+        ['', 'Julia', 'Schmidt', 'julia.schmidt@email.de', '+49 987 654321', 'Gartenweg', '15', '54321', 'Hamburg', 'Deutschland', '', 'Privatkunde'],
+        ['Auto Weber', 'Michael', 'Weber', 'info@auto-weber.de', '+49 555 123456', 'Industriestraße', '8', '67890', 'München', 'Deutschland', 'DE987654321', 'Händler']
+    ];
 
-        $this->success[] = 'Standardeinstellungen eingefügt';
+    $stmt = $conn->prepare("INSERT INTO customers (company_name, first_name, last_name, email, phone, street, house_number, postal_code, city, country, tax_id, notes, created_by) 
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)");
+
+    foreach ($customers as $customer) {
+        $stmt->execute($customer);
     }
+    echo "  ✓ Demo customers added\n";
 
-    /**
-     * Admin-Benutzer erstellen
-     */
-    private function createAdminUser()
-    {
-        $username = $_POST['admin_username'] ?? 'admin';
-        $password = $_POST['admin_password'] ?? 'admin123';
+    // Demo vehicles
+    $vehicles = [
+        [1, 'B-TM-123', 'BMW', '320d', 2020, 'WBA123456789', 'B47D20', 'Schwarz', 45000, 'Diesel', 'Regelmäßige Wartung'],
+        [2, 'HH-JS-456', 'VW', 'Golf 8', 2021, 'WVW123456789', 'EA211', 'Silber', 23000, 'Benzin', 'Unfallschaden vorne links'],
+        [3, 'M-MW-789', 'Mercedes', 'C200', 2019, 'WDB123456789', 'M264', 'Weiß', 67000, 'Benzin', 'Geschäftsfahrzeug']
+    ];
 
-        $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+    $stmt = $conn->prepare("INSERT INTO vehicles (customer_id, license_plate, manufacturer, model, year, vin, engine_code, color, mileage, fuel_type, notes) 
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
-        try {
-            $stmt = $this->db->prepare("INSERT OR REPLACE INTO users (username, password_hash, role, is_active) VALUES (?, ?, 'admin', 1)");
-            $stmt->execute([$username, $passwordHash]);
-
-            $this->success[] = "Admin-Benutzer erstellt: $username";
-        } catch (Exception $e) {
-            $this->errors[] = 'Fehler beim Erstellen des Admin-Benutzers: ' . $e->getMessage();
-        }
+    foreach ($vehicles as $vehicle) {
+        $stmt->execute($vehicle);
     }
+    echo "  ✓ Demo vehicles added\n";
 
-    /**
-     * HTML-Header
-     */
-    private function getHeader()
-    {
-        return '<!DOCTYPE html>
+    Logger::success("Database setup completed successfully!");
+} catch (Exception $e) {
+    echo "\n  ✗ Error: " . $e->getMessage() . "\n";
+    Logger::error("Setup failed", ['error' => $e->getMessage()]);
+    exit(1);
+}
+
+// ========================================
+// Create additional files
+// ========================================
+echo "\n[6/6] Creating additional files...\n";
+
+// Create config/config.php
+$configContent = '<?php
+// General configuration
+define("APP_NAME", "KFZ Billing Pro");
+define("APP_VERSION", "1.0.0");
+define("APP_URL", "http://localhost:8000");
+define("APP_PATH", __DIR__ . "/..");
+
+// Session configuration
+ini_set("session.cookie_httponly", 1);
+ini_set("session.use_only_cookies", 1);
+ini_set("session.cookie_secure", 0); // Set to 1 for HTTPS
+
+// Timezone
+date_default_timezone_set("Europe/Berlin");
+
+// Error reporting (disable in production)
+error_reporting(E_ALL);
+ini_set("display_errors", 1);
+
+// License Server (optional)
+define("LICENSE_SERVER", "https://your-license-server.com/api/verify");
+define("LICENSE_KEY", "YOUR_LICENSE_KEY_HERE");
+';
+file_put_contents('config/config.php', $configContent);
+echo "  ✓ Config file created\n";
+
+// Create .htaccess
+$htaccessContent = 'RewriteEngine On
+
+# Redirect to HTTPS (uncomment in production)
+# RewriteCond %{HTTPS} off
+# RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+
+# Protect directories
+RewriteRule ^(config|database|includes|logs|backup)/ - [F,L]
+
+# Redirect all requests to index.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php?url=$1 [QSA,L]
+
+# Security headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>
+
+# Disable directory browsing
+Options -Indexes
+';
+file_put_contents('.htaccess', $htaccessContent);
+echo "  ✓ .htaccess created\n";
+
+// Create index.php
+$indexContent = '<?php
+require_once "config/config.php";
+require_once "includes/logger.php";
+require_once "config/database.php";
+require_once "includes/auth.php";
+
+// Initialize
+session_start();
+Auth::init();
+
+// Check if user is logged in
+if (!Auth::isLoggedIn() && $_SERVER["REQUEST_URI"] !== "/login.php") {
+    header("Location: login.php");
+    exit;
+}
+?>
+<!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KFZ Fac Pro - Setup</title>
+    <title><?php echo APP_NAME; ?> - Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Your HTML from the main artifact goes here -->
+        <!-- Include the complete HTML structure -->
+    </div>
+    
+    <script src="assets/js/app.js" type="module"></script>
+</body>
+</html>
+';
+file_put_contents('index.php', $indexContent);
+echo "  ✓ index.php created\n";
+
+// Create login.php
+$loginContent = '<?php
+session_start();
+require_once "config/config.php";
+require_once "includes/logger.php";
+require_once "config/database.php";
+
+$error = "";
+
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    $username = $_POST["username"] ?? "";
+    $password = $_POST["password"] ?? "";
+    
+    if ($username && $password) {
+        require_once "includes/auth.php";
+        Auth::init();
+        
+        if (Auth::login($username, $password)) {
+            header("Location: index.php");
+            exit;
+        } else {
+            $error = "Ungültige Anmeldedaten";
+        }
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KFZ Billing Pro - Login</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
+        :root {
+            --clr-primary-a0: #e6a309;
+            --clr-primary-a10: #ebad36;
+            --clr-surface-a0: #141414;
+            --clr-surface-a10: #292929;
+            --clr-surface-a20: #404040;
+            --clr-light-a0: #ffffff;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--clr-surface-a0) 0%, var(--clr-surface-a10) 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 20px;
         }
-        .container {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            max-width: 600px;
-            width: 100%;
+        
+        .login-container {
+            background: var(--clr-surface-a10);
             padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 400px;
+            border: 1px solid var(--clr-primary-a0);
         }
-        h1 {
-            color: #333;
-            margin-bottom: 10px;
+        
+        .login-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .login-header i {
+            font-size: 48px;
+            color: var(--clr-primary-a0);
+            margin-bottom: 16px;
+        }
+        
+        .login-header h1 {
             font-size: 28px;
+            color: var(--clr-primary-a10);
+            margin-bottom: 8px;
         }
-        .subtitle {
-            color: #666;
-            margin-bottom: 30px;
+        
+        .login-header p {
+            color: #8c8c8c;
+            font-size: 14px;
         }
-        .status {
-            margin-bottom: 30px;
-        }
-        .success, .error {
-            padding: 10px 15px;
-            border-radius: 5px;
-            margin-bottom: 10px;
-        }
-        .success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        .error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
+        
         .form-group {
             margin-bottom: 20px;
         }
-        label {
+        
+        .form-label {
             display: block;
-            margin-bottom: 5px;
-            color: #555;
-            font-weight: 500;
-        }
-        input {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
+            margin-bottom: 8px;
+            color: #8c8c8c;
             font-size: 14px;
         }
-        button {
-            background: #667eea;
-            color: white;
+        
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            background: var(--clr-surface-a20);
+            border: 1px solid #585858;
+            border-radius: 8px;
+            color: var(--clr-light-a0);
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: var(--clr-primary-a0);
+            box-shadow: 0 0 0 3px rgba(230, 163, 9, 0.1);
+        }
+        
+        .btn-login {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, var(--clr-primary-a0), var(--clr-primary-a10));
             border: none;
-            padding: 12px 30px;
-            border-radius: 5px;
+            border-radius: 8px;
+            color: #000;
             font-size: 16px;
+            font-weight: 600;
             cursor: pointer;
-            margin-right: 10px;
-            margin-top: 10px;
+            transition: all 0.3s ease;
         }
-        button:hover {
-            background: #5a67d8;
+        
+        .btn-login:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(230, 163, 9, 0.3);
         }
-        .warning {
-            background: #ff6b6b;
+        
+        .error-message {
+            background: rgba(248, 113, 113, 0.1);
+            border: 1px solid #f87171;
+            color: #f87171;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
         }
-        .warning:hover {
-            background: #ff5252;
+        
+        .demo-info {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid var(--clr-surface-a20);
+            text-align: center;
+            color: #8c8c8c;
+            font-size: 12px;
+        }
+        
+        .demo-info code {
+            background: var(--clr-surface-a20);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--clr-primary-a10);
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🚀 KFZ Fac Pro Setup</h1>
-        <p class="subtitle">PHP/SQLite Version - Installation & Konfiguration</p>';
-    }
-
-    /**
-     * HTML-Formular
-     */
-    private function getForm()
-    {
-        $html = '<div class="status">';
-
-        // Erfolgsmeldungen
-        foreach ($this->success as $msg) {
-            $html .= '<div class="success">✅ ' . $msg . '</div>';
-        }
-
-        // Fehlermeldungen
-        foreach ($this->errors as $msg) {
-            $html .= '<div class="error">❌ ' . $msg . '</div>';
-        }
-
-        $html .= '</div>';
-
-        // Nur Formular anzeigen wenn keine kritischen Fehler
-        if (empty($this->errors) || count($this->errors) < 2) {
-            $html .= '
-            <form method="post">
-                <h3>Admin-Benutzer erstellen</h3>
-                <div class="form-group">
-                    <label for="admin_username">Benutzername:</label>
-                    <input type="text" id="admin_username" name="admin_username" value="admin" required>
-                </div>
-                <div class="form-group">
-                    <label for="admin_password">Passwort:</label>
-                    <input type="password" id="admin_password" name="admin_password" value="admin123" required>
-                </div>
-                
-                <button type="submit" name="action" value="install">Installation starten</button>
-                <button type="submit" name="action" value="reset" class="warning" 
-                        onclick="return confirm(\'Wirklich zurücksetzen? Alle Daten gehen verloren!\')">
-                    Datenbank zurücksetzen
-                </button>
-            </form>';
-        }
-
-        // Link zur App wenn erfolgreich
-        if (!empty($this->success) && strpos(implode('', $this->success), 'erfolgreich installiert') !== false) {
-            $html .= '<hr style="margin: 30px 0;"><p><strong>✅ Installation erfolgreich!</strong></p>';
-            $html .= '<p>Sie können sich jetzt <a href="/login">hier einloggen</a>.</p>';
-        }
-
-        return $html;
-    }
-
-    /**
-     * HTML-Footer
-     */
-    private function getFooter()
-    {
-        return '
+    <div class="login-container">
+        <div class="login-header">
+            <i class="fas fa-car"></i>
+            <h1>KFZ Billing Pro</h1>
+            <p>Melden Sie sich an, um fortzufahren</p>
+        </div>
+        
+        <?php if ($error): ?>
+            <div class="error-message">
+                <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
+            </div>
+        <?php endif; ?>
+        
+        <form method="POST" action="">
+            <div class="form-group">
+                <label class="form-label">Benutzername</label>
+                <input type="text" name="username" class="form-input" required autofocus>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Passwort</label>
+                <input type="password" name="password" class="form-input" required>
+            </div>
+            
+            <button type="submit" class="btn-login">
+                <i class="fas fa-sign-in-alt"></i> Anmelden
+            </button>
+        </form>
+        
+        <div class="demo-info">
+            Demo-Zugang: <code>admin</code> / <code>admin123</code>
+        </div>
     </div>
 </body>
-</html>';
+</html>
+';
+file_put_contents('login.php', $loginContent);
+echo "  ✓ login.php created\n";
+
+// Create includes/auth.php
+$authContent = '<?php
+class Auth {
+    private static $db;
+    
+    public static function init() {
+        require_once __DIR__ . "/../config/database.php";
+        self::$db = Database::getInstance()->getConnection();
     }
-
-    /**
-     * Datenbank zurücksetzen
-     */
-    private function resetDatabase()
-    {
-        try {
-            if (file_exists($this->dbPath)) {
-                // Backup
-                $backupPath = __DIR__ . '/backups/backup_reset_' . date('Y-m-d_H-i-s') . '.db';
-                copy($this->dbPath, $backupPath);
-                $this->success[] = 'Backup erstellt: ' . basename($backupPath);
-
-                // Löschen
-                unlink($this->dbPath);
-            }
-
-            // Neu installieren
-            $this->installDatabase();
-            $this->createAdminUser();
-
-            $this->success[] = 'Datenbank wurde zurückgesetzt!';
-        } catch (Exception $e) {
-            $this->errors[] = 'Reset fehlgeschlagen: ' . $e->getMessage();
+    
+    public static function login($username, $password) {
+        Logger::info("Login attempt for user: {$username}");
+        
+        $stmt = self::$db->prepare("SELECT * FROM users WHERE username = ? AND active = 1");
+        $stmt->execute([$username]);
+        $user = $stmt->fetch();
+        
+        if ($user && password_verify($password, $user["password"])) {
+            $_SESSION["user_id"] = $user["id"];
+            $_SESSION["username"] = $user["username"];
+            $_SESSION["role"] = $user["role"];
+            $_SESSION["logged_in"] = true;
+            
+            // Update last login
+            $updateStmt = self::$db->prepare("UPDATE users SET last_login = datetime(\'now\') WHERE id = ?");
+            $updateStmt->execute([$user["id"]]);
+            
+            Logger::success("User logged in successfully", ["user_id" => $user["id"]]);
+            return true;
+        }
+        
+        Logger::warning("Failed login attempt for user: {$username}");
+        return false;
+    }
+    
+    public static function logout() {
+        $user_id = $_SESSION["user_id"] ?? null;
+        session_destroy();
+        Logger::info("User logged out", ["user_id" => $user_id]);
+        return true;
+    }
+    
+    public static function isLoggedIn() {
+        return isset($_SESSION["logged_in"]) && $_SESSION["logged_in"] === true;
+    }
+    
+    public static function requireLogin() {
+        if (!self::isLoggedIn()) {
+            header("Location: /login.php");
+            exit;
         }
     }
+    
+    public static function hasRole($role) {
+        return isset($_SESSION["role"]) && $_SESSION["role"] === $role;
+    }
+    
+    public static function isAdmin() {
+        return self::hasRole("admin");
+    }
 }
+';
+file_put_contents('includes/auth.php', $authContent);
+echo "  ✓ auth.php created\n";
 
-// Setup ausführen
-$setup = new Setup();
-$setup->run();
+echo "\n=====================================\n";
+echo "✅ SETUP COMPLETED SUCCESSFULLY!\n";
+echo "=====================================\n\n";
+echo "📋 Summary:\n";
+echo "  • All directories created\n";
+echo "  • Database initialized\n";
+echo "  • Admin user created\n";
+echo "  • Demo data added\n";
+echo "  • All necessary files created\n\n";
+echo "🚀 Next Steps:\n";
+echo "  1. Start the PHP server:\n";
+echo "     php -S localhost:8000\n\n";
+echo "  2. Open your browser:\n";
+echo "     http://localhost:8000\n\n";
+echo "  3. Login with:\n";
+echo "     Username: admin\n";
+echo "     Password: admin123\n\n";
+echo "📁 Project Structure:\n";
+echo "  • Database: database/kfz_billing.db\n";
+echo "  • Logs: logs/app.log\n";
+echo "  • Config: config/config.php\n\n";
+echo "💡 Tips:\n";
+echo "  • Check logs/app.log for debugging\n";
+echo "  • Customize settings in config/config.php\n";
+echo "  • Add your license key for production\n";
