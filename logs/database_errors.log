@@ -1,0 +1,128 @@
+[2025-08-21 14:35:02] Query failed: SQLSTATE[HY000]: General error: 1 no such function: DATE_FORMAT SQL: 
+    SELECT 
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN status IN ('sent', 'overdue') THEN 1 END) as open_invoices,
+        SUM(CASE WHEN status = 'paid' AND DATE_FORMAT(paid_date, '%Y-%m') = :month THEN total_amount ELSE 0 END) as month_revenue,
+        SUM(CASE WHEN status IN ('sent', 'overdue') THEN total_amount ELSE 0 END) as outstanding
+    FROM invoices
+
+[2025-08-21 14:36:00] Query failed: SQLSTATE[HY000]: General error: 1 no such function: DATE_FORMAT SQL: 
+    SELECT 
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN status IN ('sent', 'overdue') THEN 1 END) as open_invoices,
+        SUM(CASE WHEN status = 'paid' AND DATE_FORMAT(paid_date, '%Y-%m') = :month THEN total_amount ELSE 0 END) as month_revenue,
+        SUM(CASE WHEN status IN ('sent', 'overdue') THEN total_amount ELSE 0 END) as outstanding
+    FROM invoices
+
+[2025-08-21 14:36:06] Query failed: SQLSTATE[HY000]: General error: 1 no such function: DATE_FORMAT SQL: 
+    SELECT 
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN status IN ('sent', 'overdue') THEN 1 END) as open_invoices,
+        SUM(CASE WHEN status = 'paid' AND DATE_FORMAT(paid_date, '%Y-%m') = :month THEN total_amount ELSE 0 END) as month_revenue,
+        SUM(CASE WHEN status IN ('sent', 'overdue') THEN total_amount ELSE 0 END) as outstanding
+    FROM invoices
+
+[2025-08-21 14:43:50] Query failed: SQLSTATE[HY000]: General error: 1 no such function: DATE_FORMAT SQL: 
+    SELECT 
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN status IN ('sent', 'overdue') THEN 1 END) as open_invoices,
+        SUM(CASE WHEN status = 'paid' AND DATE_FORMAT(paid_date, '%Y-%m') = :month THEN total_amount ELSE 0 END) as month_revenue,
+        SUM(CASE WHEN status IN ('sent', 'overdue') THEN total_amount ELSE 0 END) as outstanding
+    FROM invoices
+
+[2025-08-21 14:47:01] Query failed: SQLSTATE[HY000]: General error: 1 no such function: DATE_FORMAT SQL: 
+    SELECT 
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN status IN ('sent', 'overdue') THEN 1 END) as open_invoices,
+        SUM(CASE WHEN status = 'paid' AND DATE_FORMAT(paid_date, '%Y-%m') = :month THEN total_amount ELSE 0 END) as month_revenue,
+        SUM(CASE WHEN status IN ('sent', 'overdue') THEN total_amount ELSE 0 END) as outstanding
+    FROM invoices
+
+[2025-08-21 14:52:49] Query failed: SQLSTATE[HY000]: General error: 1 no such function: DATE_FORMAT SQL: 
+    SELECT 
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN status IN ('sent', 'overdue') THEN 1 END) as open_invoices,
+        SUM(CASE WHEN status = 'paid' AND DATE_FORMAT(paid_date, '%Y-%m') = :month THEN total_amount ELSE 0 END) as month_revenue,
+        SUM(CASE WHEN status IN ('sent', 'overdue') THEN total_amount ELSE 0 END) as outstanding
+    FROM invoices
+
+[2025-08-21 14:53:06] Query failed: SQLSTATE[HY000]: General error: 1 no such function: DATE_FORMAT SQL: 
+    SELECT 
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN status IN ('sent', 'overdue') THEN 1 END) as open_invoices,
+        SUM(CASE WHEN status = 'paid' AND DATE_FORMAT(paid_date, '%Y-%m') = :month THEN total_amount ELSE 0 END) as month_revenue,
+        SUM(CASE WHEN status IN ('sent', 'overdue') THEN total_amount ELSE 0 END) as outstanding
+    FROM invoices
+
+[2025-08-21 14:56:57] Query failed: SQLSTATE[HY000]: General error: 1 no such function: DATE_FORMAT SQL: 
+    SELECT 
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN status IN ('sent', 'overdue') THEN 1 END) as open_invoices,
+        SUM(CASE WHEN status = 'paid' AND DATE_FORMAT(paid_date, '%Y-%m') = :month THEN total_amount ELSE 0 END) as month_revenue,
+        SUM(CASE WHEN status IN ('sent', 'overdue') THEN total_amount ELSE 0 END) as outstanding
+    FROM invoices
+
+[2025-08-21 14:57:02] Query failed: SQLSTATE[HY000]: General error: 1 no such function: DATE_FORMAT SQL: 
+    SELECT 
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN status IN ('sent', 'overdue') THEN 1 END) as open_invoices,
+        SUM(CASE WHEN status = 'paid' AND DATE_FORMAT(paid_date, '%Y-%m') = :month THEN total_amount ELSE 0 END) as month_revenue,
+        SUM(CASE WHEN status IN ('sent', 'overdue') THEN total_amount ELSE 0 END) as outstanding
+    FROM invoices
+
+[2025-08-21 14:58:29] Query failed: SQLSTATE[HY000]: General error: 1 no such function: DATE_FORMAT SQL: 
+    SELECT 
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN status IN ('sent', 'overdue') THEN 1 END) as open_invoices,
+        SUM(CASE WHEN status = 'paid' AND DATE_FORMAT(paid_date, '%Y-%m') = :month THEN total_amount ELSE 0 END) as month_revenue,
+        SUM(CASE WHEN status IN ('sent', 'overdue') THEN total_amount ELSE 0 END) as outstanding
+    FROM invoices
+
+[2025-08-21 15:02:35] Query failed: SQLSTATE[HY000]: General error: 1 no such function: DATE_FORMAT SQL: 
+    SELECT 
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN status IN ('sent', 'overdue') THEN 1 END) as open_invoices,
+        SUM(CASE WHEN status = 'paid' AND DATE_FORMAT(paid_date, '%Y-%m') = :month THEN total_amount ELSE 0 END) as month_revenue,
+        SUM(CASE WHEN status IN ('sent', 'overdue') THEN total_amount ELSE 0 END) as outstanding
+    FROM invoices
+
+[2025-08-21 15:10:33] Query failed: SQLSTATE[HY000]: General error: 1 no such function: DATE_FORMAT SQL: 
+    SELECT 
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN status IN ('sent', 'overdue') THEN 1 END) as open_invoices,
+        SUM(CASE WHEN status = 'paid' AND DATE_FORMAT(paid_date, '%Y-%m') = :month THEN total_amount ELSE 0 END) as month_revenue,
+        SUM(CASE WHEN status IN ('sent', 'overdue') THEN total_amount ELSE 0 END) as outstanding
+    FROM invoices
+
+[2025-08-21 15:10:49] Query failed: SQLSTATE[HY000]: General error: 1 no such function: DATE_FORMAT SQL: 
+    SELECT 
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN status IN ('sent', 'overdue') THEN 1 END) as open_invoices,
+        SUM(CASE WHEN status = 'paid' AND DATE_FORMAT(paid_date, '%Y-%m') = :month THEN total_amount ELSE 0 END) as month_revenue,
+        SUM(CASE WHEN status IN ('sent', 'overdue') THEN total_amount ELSE 0 END) as outstanding
+    FROM invoices
+
+[2025-08-21 15:10:52] Query failed: SQLSTATE[HY000]: General error: 1 no such function: DATE_FORMAT SQL: 
+    SELECT 
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN status IN ('sent', 'overdue') THEN 1 END) as open_invoices,
+        SUM(CASE WHEN status = 'paid' AND DATE_FORMAT(paid_date, '%Y-%m') = :month THEN total_amount ELSE 0 END) as month_revenue,
+        SUM(CASE WHEN status IN ('sent', 'overdue') THEN total_amount ELSE 0 END) as outstanding
+    FROM invoices
+
+[2025-08-21 15:11:10] Query failed: SQLSTATE[HY000]: General error: 1 no such function: DATE_FORMAT SQL: 
+    SELECT 
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN status IN ('sent', 'overdue') THEN 1 END) as open_invoices,
+        SUM(CASE WHEN status = 'paid' AND DATE_FORMAT(paid_date, '%Y-%m') = :month THEN total_amount ELSE 0 END) as month_revenue,
+        SUM(CASE WHEN status IN ('sent', 'overdue') THEN total_amount ELSE 0 END) as outstanding
+    FROM invoices
+
+[2025-08-21 15:13:44] Query failed: SQLSTATE[HY000]: General error: 1 no such function: DATE_FORMAT SQL: 
+    SELECT 
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN status IN ('sent', 'overdue') THEN 1 END) as open_invoices,
+        SUM(CASE WHEN status = 'paid' AND DATE_FORMAT(paid_date, '%Y-%m') = :month THEN total_amount ELSE 0 END) as month_revenue,
+        SUM(CASE WHEN status IN ('sent', 'overdue') THEN total_amount ELSE 0 END) as outstanding
+    FROM invoices
+

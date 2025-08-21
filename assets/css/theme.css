@@ -1,0 +1,93 @@
+/* ==========================================
+   THEME.CSS - Farbschema für Billing System
+   Hier kannst du schnell alle Farben ändern!
+   ========================================== */
+
+:root {
+  /* === Base Colors === */
+  --clr-dark-a0: #000000;
+  --clr-light-a0: #ffffff;
+
+  /* === Theme Primary Colors === */
+  --clr-primary-a0: #e6a309;
+  --clr-primary-a10: #ebad36;
+  --clr-primary-a20: #f0b753;
+  --clr-primary-a30: #f4c16c;
+  --clr-primary-a40: #f8cb85;
+  --clr-primary-a50: #fbd59d;
+
+  /* === Theme Surface Colors === */
+  --clr-surface-a0: #141414;
+  --clr-surface-a10: #292929;
+  --clr-surface-a20: #404040;
+  --clr-surface-a30: #585858;
+  --clr-surface-a40: #727272;
+  --clr-surface-a50: #8c8c8c;
+
+  /* === Theme Tonal Surface Colors === */
+  --clr-surface-tonal-a0: #272017;
+  --clr-surface-tonal-a10: #3c352c;
+  --clr-surface-tonal-a20: #514b43;
+  --clr-surface-tonal-a30: #68625b;
+  --clr-surface-tonal-a40: #7f7a74;
+  --clr-surface-tonal-a50: #98938e;
+
+  /* === Status Colors === */
+  --clr-success: #28a745;
+  --clr-success-light: #48b461;
+  --clr-success-dark: #1e7e34;
+
+  --clr-danger: #dc3545;
+  --clr-danger-light: #e25563;
+  --clr-danger-dark: #bd2130;
+
+  --clr-warning: #ffc107;
+  --clr-warning-light: #ffcd39;
+  --clr-warning-dark: #e0a800;
+
+  --clr-info: #17a2b8;
+  --clr-info-light: #3ab0c3;
+  --clr-info-dark: #117a8b;
+
+  /* === Semantic Colors === */
+  --clr-background: var(--clr-surface-a0);
+  --clr-surface: var(--clr-surface-a10);
+  --clr-surface-variant: var(--clr-surface-a20);
+  --clr-border: var(--clr-surface-a20);
+  --clr-border-light: var(--clr-surface-a30);
+
+  --clr-text-primary: var(--clr-light-a0);
+  --clr-text-secondary: var(--clr-surface-a50);
+  --clr-text-muted: var(--clr-surface-a40);
+
+  --clr-primary: var(--clr-primary-a0);
+  --clr-primary-hover: var(--clr-primary-a10);
+  --clr-primary-active: var(--clr-primary-a20);
+
+  /* === Shadows === */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.5);
+
+  /* === Transitions === */
+  --transition-fast: 150ms ease;
+  --transition-base: 300ms ease;
+  --transition-slow: 500ms ease;
+
+  /* === Border Radius === */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* === Spacing === */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-2xl: 48px;
+  --spacing-3xl: 64px;
+}
