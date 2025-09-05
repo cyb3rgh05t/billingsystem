@@ -492,6 +492,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
         });
     </script>
+    <script>
+        /**
+         * Automatische Zeitzonen-Erkennung
+         * Füge dies am Ende der login.php oder in einer separaten JS-Datei ein
+         */
+        document.addEventListener('DOMContentLoaded', function() {
+            // Erkenne die Zeitzone des Browsers
+            const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+            // Sende die Zeitzone an den Server (nur wenn noch nicht gesetzt)
+            if (userTimezone && !sessionStorage.getItem('timezoneSet')) {
+                fetch('ajax/set_timezone.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            timezone: userTimezone
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            console.log('Zeitzone gesetzt:', userTimezone);
+                            sessionStorage.setItem('timezoneSet', 'true');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Fehler beim Setzen der Zeitzone:', error);
+                    });
+            }
+        });
+    </script>
 </body>
 
 </html>
